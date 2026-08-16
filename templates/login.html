@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JARVIS Admin Login</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body class="bg-black text-cyan-300 min-h-screen flex items-center justify-center">
+  <div class="w-full max-w-md border border-cyan-800 bg-cyan-950/30 p-6 shadow-2xl">
+    <div class="text-center mb-6">
+      <h1 class="text-xl font-bold tracking-[0.25em] text-cyan-400">QUASON ADMIN</h1>
+      <p class="mt-2 text-xs uppercase tracking-[0.3em] text-cyan-600">AUTHENTICATION</p>
+    </div>
+    <form id="login-form" class="space-y-4">
+      <div>
+        <label class="block text-[10px] uppercase tracking-[0.25em] text-cyan-600 mb-2">Username</label>
+        <input id="username" type="text" value="admin"
+          class="w-full bg-black border border-cyan-800 px-3 py-2 text-cyan-100 focus:outline-none focus:border-cyan-500"
+          required>
+      </div>
+      <div>
+        <label class="block text-[10px] uppercase tracking-[0.25em] text-cyan-600 mb-2">Password</label>
+        <input id="password" type="password"
+          class="w-full bg-black border border-cyan-800 px-3 py-2 text-cyan-100 focus:outline-none focus:border-cyan-500"
+          required>
+      </div>
+      <button type="submit"
+        class="w-full bg-cyan-600 hover:bg-cyan-500 text-black font-bold py-2 uppercase tracking-[0.25em]">Login</button>
+      <p id="login-error" class="hidden text-red-400 text-xs mt-2"></p>
+    </form>
+  </div>
+
+  <script>
+    document.getElementById('login-form').addEventListener('submit', async function (event) {
+      event.preventDefault();
+      const username = document.getElementById('username').value;
+      const password = document.getElementById('password').value;
+      const errorEl = document.getElementById('login-error');
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.ok) {
+          errorEl.textContent = payload.error || 'Login failed.';
+          errorEl.classList.remove('hidden');
+          return;
+        }
+        window.location.href = '/';
+      } catch (error) {
+        errorEl.textContent = 'Login failed.';
+        errorEl.classList.remove('hidden');
+      }
+    });
+  </script>
+</body>
+
+</html>
