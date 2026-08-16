@@ -1,0 +1,22 @@
+{
+  "users": [
+    {
+      "id": "admin",
+      "username": "admin",
+      "role": "platform_admin",
+      "tenant_id": null,
+      "project_ids": [],
+      "permissions": [],
+      "password_hash": "scrypt:32768:8:1$mccYycOp2IEvm0b7$091aeb02d7f729842ac15343041e60608dee6db36c2f6c09e151c4b4a0beecaed165e129e3765e508338660e219d49d71aa2645b023f9a477151d4d63971401a"
+    },
+    {
+      "id": "s-admin",
+      "username": "s",
+      "role": "tenant_admin",
+      "tenant_id": "s",
+      "project_ids": [],
+      "permissions": [],
+      "password_hash": "scrypt:32768:8:1$rPEQIihdViDKfHCY$af0dd889468b78fed1b330f1ad90a95171e2d311d4710415f2a1d38be3849f20de5ba7a8df146461eba9c8c103f4f1b8a904d1e6a0812950e9f1e2090e2b7302"
+    }
+  ]
+}

@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JARVIS HUD | R55 WORKSTATION</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <!-- <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script> -->
+  <script src="../static/lang/en.js"></script>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+
+<body class="text-cyan-400 min-h-screen h-screen overflow-hidden flex flex-col selection:bg-cyan-500/30 relative"
+  data-theme-root="1">
+
+  <header class="border-b border-cyan-900/60 bg-black/80 px-4 py-2 flex items-center justify-between shrink-0 z-10">
+    <div class="flex items-center gap-4">
+      <div class="flex gap-1">
+        <div class="w-2 h-4 bg-cyan-500 animate-pulse"></div>
+        <div class="w-2 h-4 bg-cyan-800"></div>
+      </div>
+      <h1 class="text-lg font-bold tracking-[0.3em] text-cyan-300">QUASON COMMAND CENTER</h1>
+    </div>
+
+    <div class="flex items-center flex-nowrap gap-2 md:gap-4 text-[10px] tracking-widest text-cyan-600">
+      <div class="hidden md:flex gap-2">
+        <span id="status-ws" class="status-chip-up border px-2 py-0.5 font-bold">WS:
+          CONN</span>
+        <span id="status-mic"
+          class="inline-flex items-center justify-center status-chip-up border px-2 py-0.5 font-bold"
+          aria-label="Microphone is on">
+          <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3Z" stroke="currentColor" stroke-width="1.8"
+              stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M19 11a7 7 0 1 1-14 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+              stroke-linejoin="round" />
+            <path d="M12 18v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+            <path id="status-mic-slash" class="hidden" d="M4 4 20 20" stroke="currentColor" stroke-width="1.8"
+              stroke-linecap="round" />
+          </svg>
+        </span>
+        <span id="status-audio"
+          class="inline-flex items-center justify-center status-chip-up border px-2 py-0.5 font-bold"
+          aria-label="Speaker is on">
+          <svg class="w-3 h-3 shrink-0" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 14V10h4l5-4v12l-5-4H4Z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"
+              stroke-linejoin="round" />
+            <path id="status-audio-wave" d="M16 9a4.5 4.5 0 0 1 0 6m2.5-8.5a8 8 0 0 1 0 11" stroke="currentColor"
+              stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            <path id="status-audio-slash" class="hidden" d="M4 4 20 20" stroke="currentColor" stroke-width="1.8"
+              stroke-linecap="round" />
+          </svg>
+        </span>
+      </div>
+
+      <div class="flex flex-nowrap items-center gap-2 shrink-0">
+        <button onclick="toggleProjectsModal()"
+          class="btn-ui btn-ui-cyan whitespace-nowrap shrink-0 px-3 py-1 font-bold">
+          [ PROJECTS ]
+        </button>
+
+        <button id="tenant-registration-button" data-role-only="platform_admin"
+          onclick="window.refreshCurrentUserSession().then(() => { const isPlatformAdmin = (window.AppState && window.AppState.currentUser && String(window.AppState.currentUser.role).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() === 'platform_admin') || (window.AppState && window.AppState.currentUser && String(window.AppState.currentUser.role).replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '').toLowerCase() === 'admin'); if (isPlatformAdmin) { document.getElementById('tenant-management-modal')?.classList.remove('hidden'); window.loadTenantDirectory?.(); } else { openTenantRegistrationModal(); } })"
+          class="btn-ui btn-ui-emerald whitespace-nowrap shrink-0 px-3 py-1 font-bold">
+          [ TENANTS ]
+        </button>
+
+        <button onclick="toggleSettingsModal()"
+          class="btn-ui btn-ui-cyan whitespace-nowrap shrink-0 px-3 py-1 font-bold">
+          [ SETTINGS ]
+        </button>
+
+        <button onclick="logoutCurrentUser()" class="btn-ui btn-ui-cyan shrink-0 px-3 py-1 font-bold" title="Logout">
+          [ LOGOUT ]
+        </button>
+
+        <button onclick="openShutdownModal()"
+          class="btn-ui btn-ui-red shrink-0 px-3 py-1 flex items-center justify-center" title="Shutdown System">
+          <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+            <path
+              d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </header>
+  <main class="flex-1 min-h-0 p-4 grid grid-cols-12 gap-4 w-full h-full box-border">
+
+    <div class="col-span-12 md:col-span-5 flex flex-col gap-4 min-h-0 h-full">
+      <div class="hud-panel p-3 flex flex-col shrink-0 glow-border">
+        <div class="flex justify-between items-center border-b border-cyan-900/50 pb-1 mb-3">
+          <h2 class="text-xs font-bold tracking-[0.2em] text-cyan-500">SYSTEM OVERVIEW</h2>
+          <div class="text-[9px] text-cyan-600 flex gap-2">
+            <span>UPTIME: <span id="sys-uptime" class="text-cyan-300">00:00:00</span></span>
+            <span>|</span>
+            <span id="stat-sys-health" class="font-bold tracking-widest text-cyan-400 animate-pulse">AWAITING
+              DATA</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-4 gap-2 text-center pb-2">
+          <div class="relative flex flex-col items-center justify-center">
+            <svg class="w-14 h-14 transform -rotate-90">
+              <circle cx="28" cy="28" r="24" stroke="currentColor" stroke-width="3" fill="transparent"
+                class="text-cyan-950" />
+              <circle id="circ-cpu" cx="28" cy="28" r="24" stroke="currentColor" stroke-width="3" fill="transparent"
+                stroke-dasharray="150.7" stroke-dashoffset="150.7" class="text-cyan-400 circle-transition" />
+            </svg>
+            <div class="absolute inset-0 flex items-center justify-center mb-4"><span id="val-cpu"
+                class="text-[10px] font-bold text-cyan-200">0%</span></div>
+            <span class="text-[8px] text-cyan-600 uppercase tracking-widest">AGR CPU</span>
+          </div>
+          <div class="relative flex flex-col items-center justify-center">
+            <svg class="w-14 h-14 transform -rotate-90">
+              <circle cx="28" cy="28" r="24" stroke="currentColor" stroke-width="3" fill="transparent"
+                class="text-cyan-950" />
+              <circle id="circ-mem" cx="28" cy="28" r="24" stroke="currentColor" stroke-width="3" fill="transparent"
+                stroke-dasharray="150.7" stroke-dashoffset="150.7" class="text-cyan-400 circle-transition" />
+            </svg>
+            <div class="absolute inset-0 flex items-center justify-center mb-4"><span id="val-mem"
+                class="text-[9px] font-bold text-cyan-200">0M</span></div>
+            <span class="text-[8px] text-cyan-600 uppercase tracking-widest">AGR MEM</span>
+          </div>
+          <div class="relative flex flex-col items-center justify-center">
+            <svg class="w-14 h-14 transform -rotate-90">
+              <circle cx="28" cy="28" r="24" stroke="currentColor" stroke-width="3" fill="transparent"
+                class="text-cyan-950" />
+              <circle id="circ-core" cx="28" cy="28" r="24" stroke="currentColor" stroke-width="3" fill="transparent"
+                stroke-dasharray="150.7" stroke-dashoffset="150.7" class="text-cyan-400 circle-transition" />
+            </svg>
+            <div class="absolute inset-0 flex items-center justify-center mb-4"><span id="val-core"
+                class="text-[10px] font-bold text-cyan-200">0/0</span></div>
+            <span class="text-[8px] text-cyan-600 uppercase tracking-widest">CORE SRV</span>
+          </div>
+          <div class="relative flex flex-col items-center justify-center">
+            <svg class="w-14 h-14 transform -rotate-90">
+              <circle cx="28" cy="28" r="24" stroke="currentColor" stroke-width="3" fill="transparent"
+                class="text-emerald-950" />
+              <circle id="circ-amr" cx="28" cy="28" r="24" stroke="currentColor" stroke-width="3" fill="transparent"
+                stroke-dasharray="150.7" stroke-dashoffset="150.7" class="text-emerald-400 circle-transition" />
+            </svg>
+            <div class="absolute inset-0 flex items-center justify-center mb-4"><span id="val-amr"
+                class="text-[10px] font-bold text-emerald-300">0/0</span></div>
+            <span class="text-[8px] text-emerald-600 uppercase tracking-widest">V-AMRS</span>
+          </div>
+        </div>
+      </div>
+
+      <div id="metrics-panel"
+        class="hud-panel p-3 flex-1 min-h-0 flex flex-col gap-2 glow-border transition-all duration-300">
+        <div class="flex justify-between items-end border-b border-cyan-900/50 pb-1 shrink-0">
+          <h2 class="text-xs font-bold tracking-[0.2em] text-cyan-500">SYSTEM METRICS</h2>
+          <span class="text-[9px] text-cyan-600 tracking-widest">REAL-TIME TELEMETRY</span>
+        </div>
+
+        <div class="flex-1 min-h-0 flex flex-col gap-2">
+          <div class="flex-1 min-h-0 flex flex-col bg-cyan-950/10 border border-cyan-900/40 p-2">
+            <div class="flex justify-between items-center mb-1 shrink-0">
+              <span class="text-[9px] text-cyan-600 uppercase tracking-widest">HOST CPU USAGE</span>
+              <span id="metric-cpu-val" class="text-[10px] font-bold text-cyan-300">0%</span>
+            </div>
+            <canvas id="chart-cpu" class="flex-1 min-h-0 w-full"></canvas>
+          </div>
+
+          <div class="flex-1 min-h-0 flex flex-col bg-emerald-950/10 border border-emerald-900/40 p-2">
+            <div class="flex justify-between items-center mb-1 shrink-0">
+              <span class="text-[9px] text-emerald-600 uppercase tracking-widest">HOST RAM USAGE</span>
+              <span id="metric-mem-val" class="text-[10px] font-bold text-emerald-300">0%</span>
+            </div>
+            <canvas id="chart-mem" class="flex-1 min-h-0 w-full"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div id="amr-panel"
+        class="hud-panel flex flex-col flex-1 min-h-0 shrink-0 glow-border transition-all duration-300">
+        <div onclick="toggleAmrPanel()"
+          class="border-b border-emerald-900/50 p-2 shrink-0 flex justify-between items-center cursor-pointer transition-colors group bg-emerald-950/10 hover:bg-emerald-900/30">
+          <div class="flex items-center gap-2">
+            <span id="amr-toggle-icon"
+              class="text-emerald-500 font-bold group-hover:text-emerald-300 transition-colors">[-]</span>
+            <h2 class="text-xs font-bold tracking-[0.2em] text-emerald-500">VIRTUAL AMR FLEET <span
+                id="amr-count-header" class="text-emerald-300">(0)</span></h2>
+          </div>
+        </div>
+        <div id="amr-services-container"
+          class="flex-1 overflow-y-auto flex flex-col gap-2 p-3 transition-opacity duration-300"></div>
+      </div>
+    </div>
+
+    <div class="col-span-12 md:col-span-7 flex flex-col gap-3 min-h-0 h-full">
+
+      <div id="dedicated-log-panel"
+        class="hud-panel hidden flex-col p-1 min-h-[30%] max-h-[50%] shrink-0 glow-border transition-all duration-300">
+        <div onclick="toggleLogPanel()"
+          class="bg-cyan-950/40 hover:bg-cyan-900/60 border-b border-cyan-900/50 p-2 shrink-0 flex justify-between items-center cursor-pointer transition-colors group">
+          <div class="flex items-center gap-2">
+            <span id="log-toggle-icon"
+              class="text-cyan-500 font-bold group-hover:text-cyan-300 transition-colors">[+]</span>
+            <span class="text-[10px] tracking-widest text-emerald-500">DEDICATED SERVICE LOGS</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="stop-log-btn" onclick="event.stopPropagation(); stopActiveLogStream()"
+              class="btn-ui btn-ui-amber hidden text-[9px] uppercase px-2 py-0.5 tracking-widest">STOP
+              LOG</button>
+            <span id="log-connection-status"
+              class="text-[9px] text-cyan-700 uppercase px-1 border border-cyan-800 tracking-widest">AWAITING
+              TARGET</span>
+          </div>
+        </div>
+        <div id="service-log-stream"
+          class="flex-1 p-3 text-[10px] overflow-y-auto flex flex-col gap-1 tracking-wide leading-relaxed break-words text-cyan-100 font-mono shadow-inner bg-black">
+          <div class="text-cyan-800 italic text-center mt-4">Select 'LOGS' on any service to initiate real-time
+            telemetry stream.</div>
+        </div>
+      </div>
+
+      <div id="core-panel"
+        class="hud-panel p-3 flex-1 min-h-0 flex flex-col gap-2 glow-border transition-all duration-300">
+        <div class="flex justify-between items-end border-b border-cyan-900/50 pb-1 shrink-0">
+          <h2 class="text-xs font-bold tracking-[0.2em] text-cyan-500">CORE INFRASTRUCTURE</h2>
+        </div>
+        <div id="core-services-container" class="flex-1 overflow-y-auto flex flex-col gap-2 pr-1"></div>
+      </div>
+
+      <div id="console-panel"
+        class="hud-panel flex-1 flex flex-col min-h-0 glow-border bg-cyan-950/10 transition-all duration-300">
+        <div onclick="toggleConsolePanel()"
+          class="bg-cyan-950/60 hover:bg-cyan-900/60 border-b border-cyan-900/50 p-2 shrink-0 flex justify-between items-center cursor-pointer transition-colors group">
+          <div class="flex items-center gap-2">
+            <span id="console-toggle-icon"
+              class="text-cyan-500 font-bold group-hover:text-cyan-300 transition-colors pl-2">[-]</span>
+            <span class="text-[10px] tracking-widest text-cyan-500">OPERATIONAL EVENTS CONSOLE</span>
+          </div>
+          <div id="interaction-state"
+            class="text-[9px] font-bold tracking-widest uppercase flex items-center gap-1.5 pr-2 transition-all">
+            <span id="state-dot" class="w-1.5 h-1.5 rounded-full bg-cyan-600"></span>
+            <span id="state-text" class="text-cyan-600">IDLE</span>
+          </div>
+        </div>
+
+        <div id="terminal-stream"
+          class="flex-1 p-3 text-[10px] overflow-y-auto flex flex-col gap-1 break-words text-cyan-100 shadow-inner">
+          <div class="text-cyan-600">[SYS] Initiating uplink to local command layer...</div>
+        </div>
+
+        <form id="command-form" class="shrink-0 border-t border-cyan-900/50 bg-cyan-950/80 p-2 flex gap-2 items-center">
+          <span class="text-cyan-500 pl-2 font-bold animate-pulse">></span>
+
+          <input type="text" id="command-input" placeholder="AWAITING DIRECTIVE..."
+            class="flex-1 bg-transparent border-none outline-none px-1 text-cyan-300 placeholder-cyan-800/60 uppercase tracking-widest text-[11px]"
+            autocomplete="off" autofocus />
+
+          <button type="button" id="btn-browser-mic" onclick="toggleBrowserVoiceInput()"
+            class="btn-ui btn-ui-cyan relative px-3 py-1.5 flex items-center justify-center rounded-sm group"
+            title="Enable Voice Input">
+
+            <span id="mic-ping" class="absolute inset-0 rounded-sm ring-1 ring-amber-400 animate-ping hidden"></span>
+
+            <svg class="w-3.5 h-3.5 fill-current relative z-10" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5-3c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
+            </svg>
+          </button>
+
+          <button type="submit"
+            class="btn-ui btn-ui-cyan px-5 py-1 text-[10px] tracking-[0.2em] relative z-10">EXEC</button>
+        </form>
+      </div>
+
+    </div>
+  </main>
+
+  <div id="tenant-management-modal"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="hud-panel p-6 max-w-4xl w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">TENANT MANAGEMENT</h3>
+        <button onclick="document.getElementById('tenant-management-modal').classList.add('hidden')"
+          class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <div class="text-[10px] text-cyan-600 tracking-widest uppercase">Tenants</div>
+            <button onclick="openTenantRegistrationModal()"
+              class="btn-ui btn-ui-emerald px-3 py-1 text-[9px] font-bold tracking-widest">+ REGISTER</button>
+          </div>
+          <div id="tenant-directory-list" class="space-y-2"></div>
+        </div>
+
+        <div class="space-y-3">
+          <div id="tenant-user-list-heading" class="text-[10px] text-cyan-600 tracking-widest uppercase">Tenant Users
+          </div>
+          <div id="tenant-user-list" class="space-y-2"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tenant-registration-modal"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="hud-panel p-6 max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">TENANT REGISTRATION</h3>
+        <button onclick="closeTenantRegistrationModal()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
+      </div>
+
+      <div class="flex flex-col gap-3">
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">TENANT NAME</label>
+          <input id="tenant-name" type="text" placeholder="Acme Labs"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none" />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">INITIAL TENANT ADMIN USERNAME</label>
+          <input id="tenant-admin-username" type="text" placeholder="tenant-admin"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none" />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">INITIAL TENANT ADMIN PASSWORD</label>
+          <input id="tenant-admin-password" type="password" placeholder="StrongPass!23"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none" />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">CORE PROJECT PATH (OPTIONAL)</label>
+          <div class="flex gap-2 items-center">
+            <input id="tenant-core-project-path" type="text" placeholder="Select tenant core project folder..." readonly
+              class="flex-1 bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none font-mono" />
+            <button onclick="openFolderNavigator('tenant-core-project-path')"
+              class="btn-ui btn-ui-cyan px-3 py-1 text-[9px] font-bold tracking-widest">BROWSE</button>
+          </div>
+        </div>
+
+        <div id="tenant-registration-error" class="hidden text-[9px] text-red-400 font-bold tracking-widest"></div>
+
+        <div class="flex justify-end gap-3 pt-2 border-t border-cyan-900/40">
+          <button onclick="closeTenantRegistrationModal()"
+            class="btn-ui btn-ui-cyan px-5 py-2 text-[10px] font-bold tracking-widest">CANCEL</button>
+          <button onclick="submitTenantRegistration()"
+            class="btn-ui btn-ui-emerald px-5 py-2 text-[10px] font-bold tracking-widest">REGISTER TENANT</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-modal"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="hud-panel p-6 max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
+
+      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">SYSTEM PREFERENCES</h3>
+        <button onclick="toggleSettingsModal()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
+      </div>
+
+      <div class="flex flex-col gap-3 mb-6">
+
+        <div class="flex justify-between items-center bg-cyan-950/20 p-3 border border-cyan-900/40">
+          <div class="flex flex-col">
+            <span class="text-[10px] text-cyan-300 tracking-widest">VISUAL THEME</span>
+            <span class="text-[8px] text-cyan-600 tracking-widest mt-1">APPLIES TO MAIN + TEST UI</span>
+          </div>
+          <div class="flex gap-1">
+            <button id="btn-theme-dark" onclick="setSetting('theme', 'dark')"
+              class="btn-ui btn-ui-emerald px-4 py-1.5 text-[9px] font-bold tracking-widest">DARK</button>
+            <button id="btn-theme-light" onclick="setSetting('theme', 'light')"
+              class="btn-ui btn-ui-cyan px-4 py-1.5 text-[9px] font-bold tracking-widest">LIGHT</button>
+          </div>
+        </div>
+
+        <div class="flex justify-between items-center bg-cyan-950/20 p-3 border border-cyan-900/40">
+          <div class="flex flex-col">
+            <span class="text-[10px] text-cyan-300 tracking-widest">VOICE ENGINE</span>
+            <span class="text-[8px] text-cyan-600 tracking-widest mt-1">SELECT PROCESSING HARDWARE</span>
+          </div>
+          <div class="flex gap-1">
+            <button id="btn-eng-browser" onclick="setSetting('engine', 'browser')"
+              class="btn-ui btn-ui-emerald px-4 py-1.5 text-[9px] font-bold tracking-widest">BROWSER</button>
+            <button id="btn-eng-legacy" onclick="setSetting('engine', 'legacy')"
+              class="btn-ui btn-ui-cyan px-4 py-1.5 text-[9px] font-bold tracking-widest">LEGACY
+              HW</button>
+          </div>
+        </div>
+
+        <div class="flex justify-between items-center bg-cyan-950/20 p-3 border border-cyan-900/40">
+          <span class="text-[10px] text-cyan-300 tracking-widest">VOICE RECOGNITION (MIC)</span>
+          <button id="btn-set-mic" onclick="toggleSetting('mic')"
+            class="btn-ui btn-ui-emerald px-5 py-1.5 text-[9px] font-bold tracking-widest">ON</button>
+        </div>
+
+        <div class="flex justify-between items-center bg-cyan-950/20 p-3 border border-cyan-900/40">
+          <span class="text-[10px] text-cyan-300 tracking-widest">SYSTEM AUDIO (SPEAKER)</span>
+          <button id="btn-set-speaker" onclick="toggleSetting('speaker')"
+            class="btn-ui btn-ui-emerald px-5 py-1.5 text-[9px] font-bold tracking-widest">ON</button>
+        </div>
+
+        <div class="flex justify-between items-center bg-cyan-950/20 p-3 border border-cyan-900/40">
+          <div class="flex flex-col">
+            <span class="text-[10px] text-cyan-300 tracking-widest">AUTO-LISTEN CONTINUOUS</span>
+            <span class="text-[8px] text-cyan-600 tracking-widest mt-1">BROWSER MODE ONLY</span>
+          </div>
+          <button id="btn-set-autolisten" onclick="toggleSetting('autolisten')"
+            class="btn-ui btn-ui-cyan px-5 py-1.5 text-[9px] font-bold tracking-widest">OFF</button>
+        </div>
+
+        <div class="flex justify-between items-center bg-cyan-950/20 p-3 border border-cyan-900/40">
+          <span class="text-[10px] text-cyan-300 tracking-widest">TTS VOICE PROFILE</span>
+          <select id="sel-voice" onchange="setSetting('voiceURI', this.value)"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[9px] tracking-widest p-1.5 outline-none max-w-[150px]">
+            <option value="">DEFAULT SYSTEM VOICE</option>
+          </select>
+        </div>
+
+        <div class="flex flex-col gap-2 bg-cyan-950/20 p-3 border border-cyan-900/40">
+          <div class="flex justify-between">
+            <span class="text-[10px] text-cyan-300 tracking-widest">SPEECH VOLUME</span>
+            <span id="lbl-volume" class="text-[9px] text-cyan-500 font-bold">100%</span>
+          </div>
+          <input type="range" id="slide-volume" min="0" max="1" step="0.1" value="1"
+            onchange="setSetting('volume', parseFloat(this.value))" class="w-full accent-cyan-500">
+        </div>
+
+        <div class="flex flex-col gap-2 bg-cyan-950/20 p-3 border border-cyan-900/40">
+          <div class="flex justify-between">
+            <span class="text-[10px] text-cyan-300 tracking-widest">SPEECH RATE</span>
+            <span id="lbl-rate" class="text-[9px] text-cyan-500 font-bold">1.0x</span>
+          </div>
+          <input type="range" id="slide-rate" min="0.5" max="2" step="0.1" value="1"
+            onchange="setSetting('rate', parseFloat(this.value))" class="w-full accent-cyan-500">
+        </div>
+
+      </div>
+
+      <div class="flex justify-end">
+        <button onclick="toggleSettingsModal()"
+          class="btn-ui btn-ui-cyan px-6 py-2 text-[10px] font-bold tracking-widest">SAVE
+          & CLOSE</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="projects-modal"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="hud-panel p-6 max-w-2xl w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
+
+      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">PROJECT REGISTRY</h3>
+        <button onclick="toggleProjectsModal()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
+      </div>
+
+      <div class="bg-cyan-950/20 p-3 border border-cyan-900/40 mb-4 flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <span class="text-[10px] text-cyan-300 tracking-widest font-bold">CORE PROJECT PATH</span>
+          <span class="text-[8px] text-cyan-700 tracking-widest">CENTRAL STORAGE (OPTIONAL)</span>
+        </div>
+        <div class="flex gap-2 items-center">
+          <input type="text" id="core-project-path" placeholder="Set central project storage folder..." readonly
+            class="flex-1 bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none font-mono" />
+          <div id="core-project-path-actions" class="flex items-center gap-2" style="display: none;">
+            <button id="core-project-browse-button" onclick="openFolderNavigator('core-project-path')"
+              class="btn-ui btn-ui-cyan px-3 py-1 text-[9px] font-bold tracking-widest">BROWSE</button>
+            <button id="core-project-save-button" onclick="saveCoreProjectPath()"
+              class="btn-ui btn-ui-emerald px-3 py-1 text-[9px] font-bold tracking-widest">SAVE</button>
+          </div>
+        </div>
+        <div id="core-path-error" class="hidden text-[9px] text-red-400 font-bold tracking-widest"></div>
+      </div>
+
+      <div id="projects-list" class="flex flex-col gap-2 mb-4">
+        <div class="text-cyan-800 italic text-center text-[10px] py-4">Loading project registry...</div>
+      </div>
+
+      <div class="flex justify-end mb-2">
+        <button id="btn-open-add-project" onclick="openAddProjectForm()"
+          class="btn-ui btn-ui-emerald px-5 py-2 text-[10px] font-bold tracking-widest">[+
+          ADD PROJECT]</button>
+      </div>
+
+      <div id="add-project-form" class="hidden flex-col gap-3 bg-cyan-950/20 p-4 border border-cyan-900/40">
+        <h4 class="text-[10px] text-cyan-400 font-bold tracking-[0.2em] border-b border-cyan-900/40 pb-2">REGISTER NEW
+          PROJECT</h4>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">PROJECT SOURCE MODE</label>
+          <select id="proj-source-mode" onchange="onProjectSourceModeChanged()"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none">
+            <option value="host">SELECT FROM HOST SYSTEM</option>
+            <option value="upload">UPLOAD FROM MY DEVICE</option>
+          </select>
+        </div>
+
+        <div id="proj-source-host" class="flex flex-col gap-2 border border-cyan-900/40 bg-black/20 p-2">
+          <span class="text-[9px] text-cyan-500 tracking-widest">BROWSE PROJECT FOLDERS ON THE HOST RUNNING THIS
+            PYTHON SERVICE.</span>
+        </div>
+
+        <div id="proj-source-upload" class="hidden flex-col gap-2 border border-emerald-900/40 bg-emerald-950/10 p-2">
+          <span class="text-[9px] text-emerald-500 tracking-widest">SELECT FOLDERS (RECURSIVE) AND INDIVIDUAL
+            FILES.</span>
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <input id="proj-upload-folders" type="file" webkitdirectory directory multiple
+              class="flex-1 bg-black border border-emerald-800 text-emerald-300 text-[10px] tracking-widest p-2 outline-none"
+              onchange="onUploadFolderSelected()" />
+            <input id="proj-upload-files" type="file" multiple
+              class="flex-1 bg-black border border-emerald-800 text-emerald-300 text-[10px] tracking-widest p-2 outline-none"
+              onchange="onUploadFilesSelected()" />
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <span id="proj-upload-summary" class="text-[9px] text-emerald-700 tracking-widest">NO FILES OR FOLDERS
+              SELECTED</span>
+            <button type="button" onclick="clearUploadSelection()"
+              class="btn-ui btn-ui-zinc px-3 py-1 text-[9px] font-bold tracking-widest">CLEAR</button>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">SERVICE NAME (PM2 ID - NO SPACES)</label>
+          <input type="text" id="proj-name" placeholder="my-service"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none focus:border-cyan-500"
+            autocomplete="off" />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">FRIENDLY NAME</label>
+          <input type="text" id="proj-friendly" placeholder="My Service"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none focus:border-cyan-500"
+            autocomplete="off" />
+        </div>
+
+        <div id="proj-path-row" class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">PROJECT SOURCE FOLDER</label>
+          <div class="flex gap-2">
+            <input type="text" id="proj-path" placeholder="Select a folder..." readonly
+              class="flex-1 bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none font-mono" />
+            <button onclick="openFolderNavigator('proj-path')"
+              class="btn-ui btn-ui-cyan px-4 py-1 text-[9px] font-bold tracking-widest">BROWSE</button>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">SAVE LOCATION</label>
+          <select id="proj-save-mode" onchange="onProjectSaveModeChanged()"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none">
+            <option value="current">RUN FROM CURRENT LOCATION (HOST SELECT ONLY)</option>
+            <option value="core">MOVE TO CORE PROJECT PATH</option>
+            <option value="custom">MOVE TO CUSTOM LOCATION</option>
+          </select>
+        </div>
+
+        <div id="proj-destination-row" class="hidden flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">CUSTOM DESTINATION FOLDER</label>
+          <div class="flex gap-2">
+            <input type="text" id="proj-destination-path" placeholder="Select destination folder..." readonly
+              class="flex-1 bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none font-mono" />
+            <button onclick="openFolderNavigator('proj-destination-path')"
+              class="btn-ui btn-ui-cyan px-4 py-1 text-[9px] font-bold tracking-widest">BROWSE</button>
+          </div>
+        </div>
+
+        <div id="proj-folder-preview" class="hidden bg-black/60 border border-cyan-900/40 p-2">
+          <div class="flex items-center gap-2 border-b border-cyan-900/40 pb-1 mb-1">
+            <span class="text-[9px] text-cyan-600 tracking-widest">SELECTED:</span>
+            <span id="proj-folder-name" class="text-[10px] text-cyan-300 font-bold font-mono truncate"></span>
+          </div>
+          <div id="proj-folder-contents" class="max-h-32 overflow-y-auto"></div>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">CUSTOM START COMMAND (OPTIONAL)</label>
+          <input type="text" id="proj-custom-start"
+            placeholder='pm2 start cmd.exe --name "my-service" -- /c "npm run start"'
+            class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none focus:border-cyan-500 font-mono"
+            autocomplete="off" />
+          <span class="text-[8px] text-cyan-700 tracking-widest">LEAVE EMPTY FOR DEFAULT: npm run build + pm2 start
+            dist/main.js</span>
+        </div>
+
+        <div id="proj-form-error" class="hidden text-[9px] text-red-400 font-bold tracking-widest"></div>
+
+        <div class="flex justify-end gap-3 pt-2 border-t border-cyan-900/40">
+          <button onclick="closeAddProjectForm()"
+            class="btn-ui btn-ui-cyan px-5 py-2 text-[10px] font-bold tracking-widest">CANCEL</button>
+          <button onclick="submitAddProject()"
+            class="btn-ui btn-ui-emerald px-5 py-2 text-[10px] font-bold tracking-widest">SAVE
+            PROJECT</button>
+        </div>
+      </div>
+
+      <div id="edit-project-form" class="hidden flex-col gap-3 bg-cyan-950/20 p-4 border border-cyan-900/40 mt-3">
+        <h4 class="text-[10px] text-cyan-400 font-bold tracking-[0.2em] border-b border-cyan-900/40 pb-2">EDIT PROJECT
+        </h4>
+
+        <input type="hidden" id="edit-original-name" />
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">SERVICE NAME</label>
+          <input type="text" id="edit-proj-name"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none focus:border-cyan-500" />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">FRIENDLY NAME</label>
+          <input type="text" id="edit-proj-friendly"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none focus:border-cyan-500" />
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">PROJECT PATH</label>
+          <div class="flex gap-2">
+            <input type="text" id="edit-proj-path" readonly
+              class="flex-1 bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none font-mono" />
+            <button onclick="openFolderNavigator('edit-proj-path')"
+              class="btn-ui btn-ui-cyan px-4 py-1 text-[9px] font-bold tracking-widest">BROWSE</button>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-1">
+          <label class="text-[9px] text-cyan-600 tracking-widest">CUSTOM START COMMAND (OPTIONAL)</label>
+          <input type="text" id="edit-proj-custom-start"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none focus:border-cyan-500 font-mono" />
+        </div>
+
+        <div id="edit-proj-warning" class="hidden text-[9px] text-amber-400 font-bold tracking-widest"></div>
+        <div id="edit-proj-error" class="hidden text-[9px] text-red-400 font-bold tracking-widest"></div>
+
+        <div class="flex justify-end gap-3 pt-2 border-t border-cyan-900/40">
+          <button onclick="closeEditProjectForm()"
+            class="btn-ui btn-ui-cyan px-5 py-2 text-[10px] font-bold tracking-widest">CANCEL</button>
+          <button onclick="submitEditProject()"
+            class="btn-ui btn-ui-emerald px-5 py-2 text-[10px] font-bold tracking-widest">SAVE CHANGES</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="folder-modal"
+    class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="hud-panel p-6 max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4">
+
+      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">FOLDER NAVIGATOR</h3>
+        <button onclick="closeFolderNavigator()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
+      </div>
+
+      <div class="flex items-center gap-2 mb-3">
+        <button id="folder-up-btn" onclick="navigateFolderUp()"
+          class="btn-ui btn-ui-cyan px-3 py-1.5 text-[9px] font-bold tracking-widest">[UP]</button>
+        <div id="folder-current-path"
+          class="flex-1 bg-black border border-cyan-800 text-cyan-300 text-[9px] tracking-widest p-2 font-mono truncate">
+          MY COMPUTER</div>
+      </div>
+
+      <div id="folder-error" class="hidden text-[9px] text-amber-400 font-bold tracking-widest mb-2"></div>
+
+      <div id="folder-list"
+        class="flex flex-col gap-1 max-h-[50vh] overflow-y-auto border border-cyan-900/40 bg-black p-2 mb-4">
+        <div class="text-cyan-800 italic text-center text-[10px] py-4">Loading...</div>
+      </div>
+
+      <div class="flex justify-end gap-3">
+        <button onclick="closeFolderNavigator()"
+          class="btn-ui btn-ui-cyan px-5 py-2 text-[10px] font-bold tracking-widest">CANCEL</button>
+        <button onclick="selectCurrentFolder()"
+          class="btn-ui btn-ui-emerald px-5 py-2 text-[10px] font-bold tracking-widest">SELECT
+          THIS FOLDER</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="remove-modal"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="hud-panel p-6 max-w-md w-full border-red-900/80 bg-[#020617] mx-4">
+      <div class="flex items-center gap-3 mb-4 border-b border-red-900/50 pb-2">
+        <span class="text-red-500 animate-pulse font-bold text-xl">!</span>
+        <h3 class="text-red-500 font-bold tracking-[0.2em] text-sm mt-1">WARNING: REMOVE SERVICE</h3>
+      </div>
+      <p class="text-cyan-100/80 text-[11px] mb-4 font-mono leading-relaxed">
+        You are about to remove <span id="remove-target-name"
+          class="font-bold text-white bg-red-950/50 px-1.5 py-0.5 border border-red-900/50"></span> from PM2 management.
+        <br><br>
+        This action will completely purge the service from the active process list and may disrupt system operations.
+      </p>
+      <p class="text-red-400 text-[10px] font-bold mb-6 tracking-widest animate-pulse">ARE YOU SURE YOU WANT TO
+        CONTINUE?</p>
+
+      <div class="flex justify-end gap-3">
+        <button onclick="closeRemoveModal()"
+          class="btn-ui btn-ui-cyan px-5 py-2 text-[10px] font-bold tracking-widest">CANCEL</button>
+        <button onclick="confirmRemoveService()"
+          class="btn-ui btn-ui-red px-5 py-2 text-[10px] font-bold tracking-widest">REMOVE
+          SERVICE</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="stop-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="hud-panel p-6 max-w-md w-full border-amber-900/80 bg-[#020617] mx-4">
+      <div class="flex items-center gap-3 mb-4 border-b border-amber-900/50 pb-2">
+        <span class="text-amber-500 animate-pulse font-bold text-xl">!</span>
+        <h3 class="text-amber-500 font-bold tracking-[0.2em] text-sm mt-1">WARNING: STOP SERVICE</h3>
+      </div>
+      <p class="text-cyan-100/80 text-[11px] mb-4 font-mono leading-relaxed">
+        You are about to stop <span id="stop-target-name"
+          class="font-bold text-white bg-amber-950/50 px-1.5 py-0.5 border border-amber-900/50"></span>.
+        <br><br>
+        This action will halt the process gracefully. It will remain in the PM2 registry and can be restarted at any
+        time.
+
+      </p>
+      <p class="text-amber-400 text-[10px] font-bold mb-6 tracking-widest animate-pulse">ARE YOU SURE YOU WANT TO
+        CONTINUE?</p>
+
+      <div class="flex justify-end gap-3">
+        <button onclick="closeStopModal()"
+          class="btn-ui btn-ui-cyan px-5 py-2 text-[10px] font-bold tracking-widest">CANCEL</button>
+        <button onclick="confirmStopService()"
+          class="btn-ui btn-ui-amber px-5 py-2 text-[10px] font-bold tracking-widest">STOP
+          SERVICE</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="shutdown-modal"
+    class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="hud-panel p-6 max-w-md w-full border-red-900/80 bg-[#020617] mx-4">
+      <div class="flex items-center gap-3 mb-4 border-b border-red-900/50 pb-2">
+        <span class="text-red-500 animate-pulse font-bold text-xl">!</span>
+        <h3 class="text-red-500 font-bold tracking-[0.2em] text-sm mt-1">WARNING: SYSTEM SHUTDOWN</h3>
+      </div>
+      <p class="text-cyan-100/80 text-[11px] mb-4 font-mono leading-relaxed">
+        You are about to shut down the JARVIS core application.
+        <br><br>
+        This will stop the running application, terminate the live telemetry pipeline, and disconnect all active
+        services from this console. This dashboard will go offline until the application is started again.
+      </p>
+      <p class="text-red-400 text-[10px] font-bold mb-6 tracking-widest animate-pulse">ARE YOU SURE YOU WANT TO
+        CONTINUE?</p>
+
+      <div class="flex justify-end gap-3">
+        <button onclick="closeShutdownModal()"
+          class="btn-ui btn-ui-cyan px-5 py-2 text-[10px] font-bold tracking-widest">CANCEL</button>
+        <button onclick="confirmShutdown()"
+          class="btn-ui btn-ui-red px-5 py-2 text-[10px] font-bold tracking-widest">SHUTDOWN</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/socket.io.min.js"></script>
+
+  <script>
+    window.APP_CONFIG = JSON.parse('{{ (app_config or {}) | tojson | safe }}');
+  </script>
+
+  <script src="/static/js/store.js"></script>
+  <script src="/static/js/ui.js"></script>
+  <script src="/static/js/voice.js"></script>
+
+  <script src="/static/js/main.js"></script>
+</body>
+
+</html>

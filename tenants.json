@@ -1,0 +1,28 @@
+{
+  "tenants": [
+    {
+      "id": "s",
+      "name": "s",
+      "core_project_path": "C:\\Users\\SiddeshGD\\Music\\dev",
+      "created_by": "admin",
+      "created_at": "2026-08-16T17:36:50Z",
+      "status": "active"
+    },
+    {
+      "id": "acme-labs",
+      "name": "Acme Labs",
+      "core_project_path": "C:\\Users\\SiddeshGD\\Documents\\jarvis-assistant\\tenants\\acme-labs\\core-project",
+      "created_by": "admin",
+      "created_at": "2026-08-16T17:53:08Z",
+      "status": "active"
+    },
+    {
+      "id": "example",
+      "name": "Example",
+      "core_project_path": "C:\\Users\\SiddeshGD\\Documents\\jarvis-assistant\\tenants\\example\\core-project",
+      "created_by": "admin",
+      "created_at": "2026-08-16T17:53:12Z",
+      "status": "active"
+    }
+  ]
+}

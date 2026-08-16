@@ -1,0 +1,391 @@
+/* --- Unified Theme System (Dark + Light) --- */
+:root {
+  color-scheme: dark;
+
+  --bg-main: #020617;
+  --bg-panel: rgba(0, 0, 0, 0.62);
+  --bg-panel-soft: rgba(8, 47, 73, 0.16);
+  --bg-strong: #000000;
+  --bg-overlay: rgba(0, 0, 0, 0.8);
+
+  --text-main: #67e8f9;
+  --text-subtle: #0ea5c2;
+  --text-muted: #0f766e;
+  --text-strong: #d9fbff;
+
+  --line-main: rgba(8, 145, 178, 0.44);
+  --line-strong: rgba(14, 116, 144, 0.9);
+  --line-soft: rgba(8, 145, 178, 0.25);
+
+  --accent-cyan: #22d3ee;
+  --accent-emerald: #34d399;
+  --accent-red: #f87171;
+  --accent-amber: #fbbf24;
+
+  --status-up-bg: rgba(6, 78, 59, 0.34);
+  --status-down-bg: rgba(127, 29, 29, 0.3);
+
+  --surface-cyan-soft: rgba(8, 47, 73, 0.22);
+  --surface-emerald-soft: rgba(2, 44, 34, 0.2);
+  --surface-red-soft: rgba(69, 10, 10, 0.2);
+  --surface-amber-soft: rgba(69, 26, 3, 0.2);
+
+  --selection-bg: rgba(34, 211, 238, 0.24);
+  --focus-ring: rgba(34, 211, 238, 0.3);
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-main: #f4f7fb;
+  --bg-panel: rgba(255, 255, 255, 0.96);
+  --bg-panel-soft: rgba(232, 242, 252, 0.8);
+  --bg-strong: #ffffff;
+  --bg-overlay: rgba(15, 23, 42, 0.48);
+
+  --text-main: #0f4b63;
+  --text-subtle: #0b6484;
+  --text-muted: #5f7c8d;
+  --text-strong: #0a2230;
+
+  --line-main: rgba(11, 100, 132, 0.3);
+  --line-strong: rgba(11, 100, 132, 0.55);
+  --line-soft: rgba(11, 100, 132, 0.18);
+
+  --accent-cyan: #0ea5c2;
+  --accent-emerald: #059669;
+  --accent-red: #dc2626;
+  --accent-amber: #d97706;
+
+  --status-up-bg: rgba(5, 150, 105, 0.14);
+  --status-down-bg: rgba(220, 38, 38, 0.14);
+
+  --surface-cyan-soft: rgba(11, 100, 132, 0.1);
+  --surface-emerald-soft: rgba(5, 150, 105, 0.1);
+  --surface-red-soft: rgba(220, 38, 38, 0.09);
+  --surface-amber-soft: rgba(217, 119, 6, 0.1);
+
+  --selection-bg: rgba(14, 165, 194, 0.2);
+  --focus-ring: rgba(14, 165, 194, 0.28);
+}
+
+/* --- Base Layout --- */
+body {
+  font-family: 'Share Tech Mono', monospace;
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  background-image:
+    radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent-cyan) 12%, transparent) 0%, transparent 62%),
+    linear-gradient(color-mix(in srgb, var(--accent-cyan) 6%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent-cyan) 6%, transparent) 1px, transparent 1px);
+  background-size: 100% 100%, 20px 20px, 20px 20px;
+}
+
+::selection {
+  background: var(--selection-bg);
+}
+
+/* --- Remove glow/blur/shadow-heavy visuals --- */
+.glow-text,
+.glow-text-intense,
+.glow-border {
+  text-shadow: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+[class*="shadow-"],
+.shadow-inner,
+.drop-shadow,
+.drop-shadow-\[0_0_4px_rgba\(52\,211\,153\,0\.5\)\],
+.shadow-\[0_0_10px_rgba\(8\,145\,178\,0\.2\)\],
+.shadow-\[0_0_40px_rgba\(8\,145\,178\,0\.25\)\],
+.shadow-\[0_0_30px_rgba\(239\,68\,68\,0\.2\)\],
+.shadow-\[0_4px_20px_rgba\(8\,145\,178\,0\.15\)\],
+.shadow-\[0_8px_24px_rgba\(0\,0\,0\,0\.45\)\] {
+  box-shadow: none !important;
+  filter: none !important;
+}
+
+.backdrop-blur-sm {
+  backdrop-filter: none !important;
+}
+
+/* --- Custom Tech Scrollbars --- */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--bg-strong) 88%, transparent);
+}
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent-cyan) 40%, transparent);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent-cyan) 64%, transparent);
+}
+
+/* --- HUD Panel Geometric Borders --- */
+.hud-panel {
+  position: relative;
+  border: 1px solid var(--line-main);
+  background: var(--bg-panel);
+}
+.hud-panel::before,
+.hud-panel::after {
+  content: '';
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--accent-cyan);
+}
+.hud-panel::before {
+  top: -1px;
+  left: -1px;
+  border-right: none;
+  border-bottom: none;
+}
+.hud-panel::after {
+  bottom: -1px;
+  right: -1px;
+  border-left: none;
+  border-top: none;
+}
+
+/* --- Utility Remap to Theme Tokens --- */
+.text-cyan-100,
+.text-cyan-200,
+.text-cyan-300,
+.text-cyan-400,
+.text-cyan-500,
+.text-cyan-600,
+.text-cyan-700,
+.text-cyan-800 {
+  color: var(--text-main) !important;
+}
+.text-cyan-600\/80,
+.text-cyan-700\/80,
+.text-cyan-800\/60 {
+  color: color-mix(in srgb, var(--text-muted) 80%, transparent) !important;
+}
+.text-emerald-300,
+.text-emerald-400,
+.text-emerald-500,
+.text-emerald-600,
+.text-emerald-700 {
+  color: var(--accent-emerald) !important;
+}
+.text-red-400,
+.text-red-500 {
+  color: var(--accent-red) !important;
+}
+.text-amber-300,
+.text-amber-400,
+.text-amber-500 {
+  color: var(--accent-amber) !important;
+}
+.text-zinc-500,
+.text-zinc-600,
+.text-zinc-700 {
+  color: var(--text-muted) !important;
+}
+.text-white {
+  color: var(--text-strong) !important;
+}
+
+.bg-black,
+.bg-black\/20,
+.bg-black\/80 {
+  background-color: var(--bg-strong) !important;
+}
+.bg-cyan-950\/10,
+.bg-cyan-950\/20,
+.bg-cyan-950\/30,
+.bg-cyan-950\/40,
+.bg-cyan-950\/60,
+.bg-cyan-950\/80 {
+  background-color: var(--surface-cyan-soft) !important;
+}
+.bg-emerald-950\/5,
+.bg-emerald-950\/10,
+.bg-emerald-950\/30 {
+  background-color: var(--surface-emerald-soft) !important;
+}
+.bg-red-950\/10,
+.bg-red-950\/20,
+.bg-red-950\/30 {
+  background-color: var(--surface-red-soft) !important;
+}
+.bg-amber-950\/30 {
+  background-color: var(--surface-amber-soft) !important;
+}
+.bg-zinc-950\/20 {
+  background-color: color-mix(in srgb, var(--bg-main) 86%, transparent) !important;
+}
+
+.border-cyan-900,
+.border-cyan-900\/20,
+.border-cyan-900\/30,
+.border-cyan-900\/40,
+.border-cyan-900\/50,
+.border-cyan-900\/60,
+.border-cyan-800,
+.border-cyan-800\/50,
+.border-cyan-700,
+.border-cyan-500,
+.border-cyan-500\/50 {
+  border-color: var(--line-main) !important;
+}
+.border-emerald-900,
+.border-emerald-900\/30,
+.border-emerald-900\/40,
+.border-emerald-800,
+.border-emerald-800\/50,
+.border-emerald-700,
+.border-emerald-500 {
+  border-color: color-mix(in srgb, var(--accent-emerald) 40%, transparent) !important;
+}
+.border-red-900,
+.border-red-900\/30,
+.border-red-900\/40,
+.border-red-800,
+.border-red-800\/50,
+.border-red-700,
+.border-red-500 {
+  border-color: color-mix(in srgb, var(--accent-red) 40%, transparent) !important;
+}
+.border-amber-900,
+.border-amber-800,
+.border-amber-700,
+.border-amber-600,
+.border-amber-500 {
+  border-color: color-mix(in srgb, var(--accent-amber) 45%, transparent) !important;
+}
+
+/* --- Circular Widget SVG Properties --- */
+.circle-transition {
+  transition: stroke-dashoffset 0.5s ease-out;
+}
+
+/* --- Reusable Button System --- */
+button,
+summary[role='button'],
+details > summary {
+  cursor: pointer;
+}
+
+.btn-ui {
+  --btn-text: var(--text-main);
+  --btn-text-hover: var(--text-strong);
+  --btn-border: var(--line-strong);
+  --btn-border-hover: color-mix(in srgb, var(--accent-cyan) 65%, var(--line-strong));
+  --btn-bg: var(--surface-cyan-soft);
+  --btn-bg-hover: color-mix(in srgb, var(--surface-cyan-soft) 70%, var(--accent-cyan) 18%);
+  color: var(--btn-text);
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  transition: color 180ms ease, border-color 180ms ease, background-color 180ms ease, transform 120ms ease;
+}
+
+.btn-ui:hover {
+  color: var(--btn-text-hover);
+  border-color: var(--btn-border-hover);
+  background: var(--btn-bg-hover);
+}
+
+.btn-ui:active {
+  transform: translateY(1px);
+}
+
+.btn-ui:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+}
+
+.btn-ui-cyan {
+  --btn-text: var(--text-main);
+  --btn-border: var(--line-strong);
+  --btn-border-hover: color-mix(in srgb, var(--accent-cyan) 70%, var(--line-strong));
+  --btn-bg: var(--surface-cyan-soft);
+  --btn-bg-hover: color-mix(in srgb, var(--surface-cyan-soft) 68%, var(--accent-cyan) 20%);
+}
+
+.btn-ui-emerald {
+  --btn-text: var(--accent-emerald);
+  --btn-border: color-mix(in srgb, var(--accent-emerald) 45%, transparent);
+  --btn-border-hover: color-mix(in srgb, var(--accent-emerald) 70%, transparent);
+  --btn-bg: var(--surface-emerald-soft);
+  --btn-bg-hover: color-mix(in srgb, var(--surface-emerald-soft) 72%, var(--accent-emerald) 18%);
+}
+
+.btn-ui-red {
+  --btn-text: var(--accent-red);
+  --btn-border: color-mix(in srgb, var(--accent-red) 45%, transparent);
+  --btn-border-hover: color-mix(in srgb, var(--accent-red) 70%, transparent);
+  --btn-bg: var(--surface-red-soft);
+  --btn-bg-hover: color-mix(in srgb, var(--surface-red-soft) 70%, var(--accent-red) 16%);
+}
+
+.btn-ui-amber {
+  --btn-text: var(--accent-amber);
+  --btn-border: color-mix(in srgb, var(--accent-amber) 44%, transparent);
+  --btn-border-hover: color-mix(in srgb, var(--accent-amber) 70%, transparent);
+  --btn-bg: var(--surface-amber-soft);
+  --btn-bg-hover: color-mix(in srgb, var(--surface-amber-soft) 72%, var(--accent-amber) 18%);
+}
+
+.btn-ui-zinc {
+  --btn-text: var(--text-muted);
+  --btn-border: color-mix(in srgb, var(--text-muted) 42%, transparent);
+  --btn-border-hover: color-mix(in srgb, var(--text-muted) 70%, transparent);
+  --btn-bg: color-mix(in srgb, var(--bg-main) 84%, transparent);
+  --btn-bg-hover: color-mix(in srgb, var(--bg-main) 72%, transparent);
+}
+
+/* --- Form Fields --- */
+input,
+select,
+textarea {
+  background-color: var(--bg-strong);
+  color: var(--text-main);
+  border-color: var(--line-main);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--text-muted) 78%, transparent);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent-cyan) 52%, transparent);
+}
+
+/* --- Theme-aware status chips --- */
+.status-chip-up {
+  color: var(--accent-emerald);
+  border-color: color-mix(in srgb, var(--accent-emerald) 45%, transparent);
+  background: var(--status-up-bg);
+}
+.status-chip-down {
+  color: var(--accent-red);
+  border-color: color-mix(in srgb, var(--accent-red) 45%, transparent);
+  background: var(--status-down-bg);
+}
+
+/* --- Utility class for quick text defaults --- */
+.theme-text-main {
+  color: var(--text-main) !important;
+}
+.theme-text-subtle {
+  color: var(--text-subtle) !important;
+}
+.theme-bg-panel {
+  background: var(--bg-panel) !important;
+}
+.theme-border-main {
+  border-color: var(--line-main) !important;
+}

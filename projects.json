@@ -1,0 +1,89 @@
+{
+  "core_project_path": "${HOME}/Documents/deployment",
+  "projects": [
+    {
+      "name": "auth",
+      "friendly_name": "auth",
+      "path": "${HOME}/Documents/OTHERE REPO/auth",
+      "deployment_profile": {
+        "project_type": "node",
+        "include_paths": [
+          "**"
+        ],
+        "exclude_paths": [
+          ".git/**",
+          ".svn/**",
+          ".hg/**",
+          "__pycache__/**",
+          "*.pyc",
+          "*.pyo",
+          ".DS_Store",
+          "Thumbs.db",
+          "node_modules/**",
+          ".next/**",
+          ".nuxt/**",
+          "coverage/**"
+        ],
+        "required_files": [
+          "package.json"
+        ],
+        "env_mode": "optional",
+        "install_command": "npm install",
+        "build_command": "npm run build",
+        "build_policy": "if_missing",
+        "runtime_entry": "dist/main.js",
+        "auto_install": true,
+        "auto_build": true
+      },
+      "runtime_state": {
+        "deps_installed": true,
+        "install_fingerprint": "07e6fce6e74315dff876b24b535c216b51ba68c079f336945fb4b4579bb3c460",
+        "last_ready_at": 1786903001,
+        "last_error_stage": "",
+        "last_error": ""
+      }
+    },
+    {
+      "name": "custom",
+      "friendly_name": "custom",
+      "path": "${HOME}/Documents/deployment/custom",
+      "deployment_profile": {
+        "project_type": "node",
+        "include_paths": [
+          "**"
+        ],
+        "exclude_paths": [
+          ".git/**",
+          ".svn/**",
+          ".hg/**",
+          "__pycache__/**",
+          "*.pyc",
+          "*.pyo",
+          ".DS_Store",
+          "Thumbs.db",
+          "node_modules/**",
+          ".next/**",
+          ".nuxt/**",
+          "coverage/**"
+        ],
+        "required_files": [
+          "package.json"
+        ],
+        "env_mode": "optional",
+        "install_command": "npm install",
+        "build_command": "npm run build",
+        "build_policy": "if_missing",
+        "runtime_entry": "dist/main.js",
+        "auto_install": true,
+        "auto_build": true
+      },
+      "runtime_state": {
+        "deps_installed": true,
+        "install_fingerprint": "d512ac06884a64c3757d53f5df2b69d5224c2ceffa4e372cf87c8f1af8f1ed8c",
+        "last_ready_at": 1786903004,
+        "last_error_stage": "",
+        "last_error": ""
+      }
+    }
+  ]
+}
