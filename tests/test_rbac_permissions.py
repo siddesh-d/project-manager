@@ -197,6 +197,24 @@ class TestRBACPermissions(unittest.TestCase):
         popen.assert_not_called()
         emit.assert_called_once()
 
+    def test_virtual_amr_log_stream_is_allowed_without_registry_project(self):
+        user = {"role": "tenant_admin", "tenant_id": "tenant-a"}
+        with web_server.app.test_request_context('/socket.io'), \
+                patch.object(web_server, '_get_authenticated_user', return_value=user), \
+                patch.object(web_server.projects, 'get_projects', return_value=[]), \
+                patch.object(web_server, '_emit_to_request'), \
+                patch.object(web_server.subprocess, 'Popen') as popen:
+            process = unittest.mock.Mock()
+            process.stdout.readline.side_effect = ['virtual amr ready', '']
+            process.stdout.close = unittest.mock.Mock()
+            process.terminate = unittest.mock.Mock()
+            popen.return_value = process
+
+            result = web_server.handle_toggle_logs({'service': 'amr-service-42', 'action': 'start'})
+
+        self.assertTrue(result['ok'])
+        popen.assert_called_once()
+
     def test_tenant_project_update_rejects_other_tenant_project(self):
         user = {"role": "tenant_admin", "tenant_id": "tenant-a"}
         registry = [{"name": "other-api", "tenant_id": "tenant-b"}]

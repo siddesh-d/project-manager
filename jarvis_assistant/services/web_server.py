@@ -349,6 +349,10 @@ def _authorize_tenant_ui_command(user, command_text, command_callback):
     return {'ok': not isinstance(callback_result, dict) or bool(callback_result.get('ok', True)), 'results': [{'name': project_name, 'result': callback_result}]}
 
 
+def _is_virtual_amr_service(service_name):
+    return str(service_name or '').strip().startswith('amr-service-')
+
+
 def _bind_socket_user(sid):
     user = _get_authenticated_user()
     if user:
@@ -1401,7 +1405,11 @@ def handle_toggle_logs(data):
     sid = getattr(request, 'sid', None)
     process_key = (sid, service_name)
 
-    if not user or not _get_project_for_user(service_name, user):
+    if not user:
+        _emit_to_request('service_log_error', {'service': service_name, 'error': 'Authentication required.'})
+        return {'ok': False, 'error': 'Authentication required.'}
+
+    if not _is_virtual_amr_service(service_name) and not _get_project_for_user(service_name, user):
         _emit_to_request('service_log_error', {'service': service_name, 'error': 'Project not found or access denied.'})
         return {'ok': False, 'error': 'Project not found or access denied.'}
     
@@ -1437,7 +1445,8 @@ def handle_toggle_logs(data):
                     current_role = normalize_role_name((current_user or {}).get('role') or 'tenant_view_user')
                     current_tenant_id = str((current_user or {}).get('tenant_id') or '').strip()
                     tenant_is_valid = current_role == 'platform_admin' or (current_tenant_id and get_tenant_by_id(current_tenant_id))
-                    if mapped_user_id != expected_user_id or not current_user or not tenant_is_valid or not _get_project_for_user(name, current_user):
+                    project_is_valid = _is_virtual_amr_service(name) or _get_project_for_user(name, current_user)
+                    if mapped_user_id != expected_user_id or not current_user or not tenant_is_valid or not project_is_valid:
                         try:
                             p.terminate()
                         except Exception:
