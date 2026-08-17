@@ -18,6 +18,9 @@ ENV/
 .env
 .env.*
 
+project.json
+user.json
+
 dist/
 build/
 *.egg-info/
