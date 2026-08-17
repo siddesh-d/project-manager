@@ -2,5 +2,4 @@ Flask
 Flask-SocketIO
 SpeechRecognition
 requests
-ollama
 requests>=2.32.0
