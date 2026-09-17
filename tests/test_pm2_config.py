@@ -37,10 +37,10 @@ class TestPm2ConfigExternalization(unittest.TestCase):
             os.environ["JARVIS_PM2_SHOW_USER"] = "true"
 
             try:
-                for module_name in ["jarvis_assistant.config.settings", "jarvis_assistant.config"]:
+                for module_name in ["assistant.config.settings", "assistant.config"]:
                     sys.modules.pop(module_name, None)
 
-                settings_module = importlib.import_module("jarvis_assistant.config.settings")
+                settings_module = importlib.import_module("assistant.config.settings")
 
                 self.assertEqual(settings_module.PM2_TELEMETRY_REFRESH_SECONDS, 12)
                 self.assertIs(settings_module.PM2_FIELDS["user"], True)

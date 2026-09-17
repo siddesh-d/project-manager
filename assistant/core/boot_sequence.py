@@ -5,10 +5,10 @@ import json
 import threading
 import queue
 
-from jarvis_assistant.config import get_port_from_env, PM2_EXECUTABLE
-from jarvis_assistant.registry.projects import get_projects
-from jarvis_assistant.services import pm2_manager
-from jarvis_assistant.core.command_center import run_standby_loop, broadcast, ask_question, intelligent_service_start
+from assistant.config import get_port_from_env, PM2_EXECUTABLE
+from assistant.registry.projects import get_projects
+from assistant.services import pm2_manager
+from assistant.core.command_center import run_standby_loop, broadcast, ask_question, intelligent_service_start
 
 def handle_service_failure(project, port, voice, ear):
     pm2_name = project["name"]

@@ -4,7 +4,7 @@ import subprocess
 import base64
 import os
 import shutil
-from jarvis_assistant.config import ASSISTANT_LOG_LABEL
+from assistant.config import ASSISTANT_LOG_LABEL
 
 class JarvisVoiceEngine:
     def __init__(self, socketio=None):

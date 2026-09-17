@@ -1,4 +1,4 @@
-from jarvis_assistant.core.app import run
+from assistant.core.app import run
 
 
 if __name__ == "__main__":

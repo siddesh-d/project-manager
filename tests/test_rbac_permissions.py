@@ -4,14 +4,14 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from jarvis_assistant.auth import (
+from assistant.auth import (
     ROLE_DEFINITIONS,
     user_has_permission,
     user_has_scope_access,
 )
-from jarvis_assistant.registry import projects
-from jarvis_assistant.core import command_center
-from jarvis_assistant.services import web_server
+from assistant.registry import projects
+from assistant.core import command_center
+from assistant.services import web_server
 
 
 class TestRBACPermissions(unittest.TestCase):

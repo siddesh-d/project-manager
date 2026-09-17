@@ -11,7 +11,7 @@ from pathlib import Path
 from flask import Flask, render_template, request, jsonify, session, has_request_context
 from flask_socketio import SocketIO, disconnect
 
-from jarvis_assistant.auth import (
+from assistant.auth import (
     add_tenant_user,
     build_session_user,
     create_tenant_registration,
@@ -36,7 +36,7 @@ from jarvis_assistant.auth import (
 )
 
 # IMPORT OUR CENTRALIZED SETTINGS WITH PROJECTS TO ASSURE TELEMETRY INTEGRITY
-from jarvis_assistant.config import (
+from assistant.config import (
     SERVER_HOST,
     SERVER_PORT,
     SECRET_KEY,
@@ -52,8 +52,8 @@ from jarvis_assistant.config import (
     BASE_DIR,
     get_port_from_env,
 )
-from jarvis_assistant.registry import projects
-from jarvis_assistant.services import pm2_manager
+from assistant.registry import projects
+from assistant.services import pm2_manager
 
 app = Flask(
     __name__,
@@ -85,6 +85,7 @@ _last_pm2_status_map = {}
 _connected_socket_ids_lock = threading.Lock()
 _connected_socket_ids = set()
 _socket_user_map = {}
+MAX_EDITABLE_FILE_BYTES = 2 * 1024 * 1024
 
 
 def _get_authenticated_user():
@@ -93,7 +94,7 @@ def _get_authenticated_user():
     user_id = session.get('user_id')
     if not user_id:
         return None
-    from jarvis_assistant.auth import get_user_by_id
+    from assistant.auth import get_user_by_id
     user = get_user_by_id(user_id)
     if not user:
         return None
@@ -202,6 +203,52 @@ def _path_is_within_root(path, root):
         return os.path.commonpath([resolved_path, resolved_root]) == resolved_root
     except (OSError, TypeError, ValueError):
         return False
+
+
+def _normalize_relative_file_path(relative_path):
+    text = str(relative_path or '').replace('\\', '/').strip()
+    if not text:
+        return ''
+    parts = []
+    for part in text.split('/'):
+        token = str(part or '').strip()
+        if not token or token == '.':
+            continue
+        if token == '..':
+            raise ValueError('Path traversal is not allowed.')
+        parts.append(token)
+    return '/'.join(parts)
+
+
+def _resolve_project_file_path(project, relative_path='', allow_directory=False, allow_missing=False):
+    project_root = str((project or {}).get('path') or '').strip()
+    if not project_root:
+        raise ValueError('Project path is not configured.')
+
+    resolved_root = os.path.realpath(os.path.abspath(os.path.normpath(project_root)))
+    if not os.path.isdir(resolved_root):
+        raise FileNotFoundError(f"Project directory is not accessible: {resolved_root}")
+
+    rel = _normalize_relative_file_path(relative_path)
+    target = resolved_root if not rel else os.path.realpath(os.path.abspath(os.path.normpath(os.path.join(resolved_root, rel))))
+
+    try:
+        if os.path.commonpath([target, resolved_root]) != resolved_root:
+            raise ValueError('Requested path is outside the project directory.')
+    except ValueError:
+        raise ValueError('Requested path is outside the project directory.')
+
+    if not allow_missing and not os.path.exists(target):
+        raise FileNotFoundError('Requested path does not exist.')
+
+    if os.path.exists(target):
+        if allow_directory:
+            if not os.path.isdir(target):
+                raise ValueError('Requested path is not a directory.')
+        elif not os.path.isfile(target):
+            raise ValueError('Requested path is not a file.')
+
+    return resolved_root, target, rel
 
 
 def _tenant_browse_path(user, requested_path=None):
@@ -910,6 +957,141 @@ def register_tenant():
         return jsonify({'ok': False, 'error': str(exc)}), 400
 
     return jsonify({'ok': True, 'tenant': result})
+
+
+@app.route('/api/projects/<project_name>/files', methods=['GET'])
+def list_project_files(project_name):
+    user = _get_authenticated_user()
+    if not user:
+        return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
+
+    project = _get_project_for_user(project_name, user)
+    if not project:
+        return jsonify({'ok': False, 'error': 'Project not found or access denied.'}), 404
+
+    relative_path = request.args.get('path', '')
+    try:
+        root, target_dir, rel = _resolve_project_file_path(project, relative_path, allow_directory=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+
+    try:
+        dirs = []
+        files = []
+        with os.scandir(target_dir) as it:
+            for entry in it:
+                name = entry.name
+                if not name:
+                    continue
+                child_rel = '/'.join(part for part in [rel, name] if part)
+                if entry.is_dir(follow_symlinks=False):
+                    dirs.append({'name': name, 'path': child_rel})
+                elif entry.is_file(follow_symlinks=False):
+                    files.append({'name': name, 'path': child_rel, 'size': int(entry.stat().st_size)})
+
+        dirs.sort(key=lambda item: item['name'].lower())
+        files.sort(key=lambda item: item['name'].lower())
+
+        parent = ''
+        if rel:
+            parent = '/'.join(rel.split('/')[:-1])
+
+        return jsonify({
+            'ok': True,
+            'project': project.get('name'),
+            'root': root,
+            'path': rel,
+            'parent': parent,
+            'dirs': dirs,
+            'files': files,
+        })
+    except OSError as exc:
+        return jsonify({'ok': False, 'error': f'Unable to list files: {exc}'}), 500
+
+
+@app.route('/api/projects/<project_name>/file', methods=['GET'])
+def read_project_file(project_name):
+    user = _get_authenticated_user()
+    if not user:
+        return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
+
+    project = _get_project_for_user(project_name, user)
+    if not project:
+        return jsonify({'ok': False, 'error': 'Project not found or access denied.'}), 404
+
+    relative_path = request.args.get('path', '')
+    try:
+        _, target_file, rel = _resolve_project_file_path(project, relative_path, allow_directory=False)
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+
+    try:
+        size_bytes = int(os.path.getsize(target_file))
+        if size_bytes > MAX_EDITABLE_FILE_BYTES:
+            return jsonify({'ok': False, 'error': f'File is too large to edit in browser (>{MAX_EDITABLE_FILE_BYTES} bytes).'}), 400
+        with open(target_file, 'r', encoding='utf-8') as handle:
+            content = handle.read()
+        return jsonify({'ok': True, 'project': project.get('name'), 'path': rel, 'content': content, 'size': size_bytes})
+    except UnicodeDecodeError:
+        return jsonify({'ok': False, 'error': 'File is not UTF-8 text and cannot be edited in this UI.'}), 400
+    except OSError as exc:
+        return jsonify({'ok': False, 'error': f'Unable to read file: {exc}'}), 500
+
+
+@app.route('/api/projects/<project_name>/file', methods=['PUT'])
+def write_project_file(project_name):
+    user = _get_authenticated_user()
+    if not user:
+        return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
+    if not _user_can_manage_projects(user):
+        return jsonify({'ok': False, 'error': 'Project management permission required.'}), 403
+
+    project = _get_project_for_user(project_name, user, require_manage=True)
+    if not project:
+        return jsonify({'ok': False, 'error': 'Project not found or access denied.'}), 404
+
+    payload = request.get_json(silent=True) or {}
+    relative_path = payload.get('path')
+    content = payload.get('content')
+    if relative_path is None:
+        return jsonify({'ok': False, 'error': 'File path is required.'}), 400
+    if content is None:
+        return jsonify({'ok': False, 'error': 'File content is required.'}), 400
+
+    try:
+        _, target_file, rel = _resolve_project_file_path(project, relative_path, allow_directory=False, allow_missing=True)
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+
+    parent = os.path.dirname(target_file)
+    if not parent or not os.path.isdir(parent):
+        return jsonify({'ok': False, 'error': 'Parent folder does not exist.'}), 400
+
+    existing_mode = None
+    if os.path.exists(target_file):
+        try:
+            existing_mode = os.stat(target_file).st_mode
+        except OSError:
+            existing_mode = None
+
+    tmp_path = f"{target_file}.jarvis.tmp"
+    try:
+        with open(tmp_path, 'w', encoding='utf-8', newline='') as handle:
+            handle.write(str(content))
+        os.replace(tmp_path, target_file)
+        if existing_mode is not None:
+            try:
+                os.chmod(target_file, existing_mode)
+            except OSError:
+                pass
+        return jsonify({'ok': True, 'project': project.get('name'), 'path': rel})
+    except OSError as exc:
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        return jsonify({'ok': False, 'error': f'Unable to save file: {exc}'}), 500
 
 
 def _safe_upload_destination(base_dir, relative_path):

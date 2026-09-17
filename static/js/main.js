@@ -455,15 +455,19 @@ socket.on('project_op_result', (result) => {
     if (result.ok) {
       window.closeAddProjectForm();
       window.logToTerminal('PROJECTS', 'Project registered. New service card will appear shortly.', 'text-emerald-400 font-bold');
+      window.AppState.socket?.emit('get_projects');
     } else {
       window.showProjectFormError((result.error || 'UNKNOWN ERROR').toUpperCase());
     }
   } else if (result.action === 'remove' && !result.ok) {
     window.logToTerminal('PROJECTS', result.error || 'Remove failed.', 'text-red-400 font-bold');
+  } else if (result.action === 'remove' && result.ok) {
+    window.AppState.socket?.emit('get_projects');
   } else if (result.action === 'set_core_path') {
     if (result.ok) {
       window.showCorePathError(null);
       window.logToTerminal('PROJECTS', 'Core Project Path updated successfully.', 'text-emerald-400 font-bold');
+      window.AppState.socket?.emit('get_projects');
     } else {
       window.showCorePathError((result.error || 'FAILED TO SET CORE PROJECT PATH').toUpperCase());
     }
@@ -471,6 +475,7 @@ socket.on('project_op_result', (result) => {
     if (result.ok) {
       window.closeEditProjectForm();
       window.logToTerminal('PROJECTS', 'Project updated successfully.', 'text-emerald-400 font-bold');
+      window.AppState.socket?.emit('get_projects');
     } else {
       const errEl = document.getElementById('edit-proj-error');
       if (errEl) {
@@ -481,12 +486,14 @@ socket.on('project_op_result', (result) => {
   } else if (result.action === 'move_core') {
     if (result.ok) {
       window.logToTerminal('PROJECTS', 'Project moved to Core Project Path.', 'text-emerald-400 font-bold');
+      window.AppState.socket?.emit('get_projects');
     } else {
       window.logToTerminal('PROJECTS', (result.error || 'Move failed.'), 'text-red-400 font-bold');
     }
   } else if (result.action === 'delete_core') {
     if (result.ok) {
       window.logToTerminal('PROJECTS', 'Project deleted from Core Project Path and registry.', 'text-emerald-400 font-bold');
+      window.AppState.socket?.emit('get_projects');
     } else {
       window.logToTerminal('PROJECTS', (result.error || 'Delete failed.'), 'text-red-400 font-bold');
     }

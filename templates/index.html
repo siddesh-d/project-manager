@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>JARVIS HUD | R55 WORKSTATION</title>
+  <title>Quason</title>
 
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
   <!-- <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script> -->
@@ -637,6 +637,51 @@
         </div>
       </div>
 
+    </div>
+  </div>
+
+  <div id="project-file-editor-modal"
+    class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div class="hud-panel p-6 max-w-5xl w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[92vh] overflow-y-auto">
+      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
+        <h3 class="text-cyan-400 font-bold tracking-[0.2em] text-sm mt-1">PROJECT FILE EDITOR: <span
+            id="project-file-editor-project" class="text-cyan-300"></span></h3>
+        <button onclick="closeProjectFileEditor()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="md:col-span-1 flex flex-col gap-2">
+          <div class="flex items-center gap-2">
+            <button id="project-file-editor-up-btn" onclick="navigateProjectFileEditorUp()"
+              class="btn-ui btn-ui-cyan px-3 py-1.5 text-[9px] font-bold tracking-widest" disabled>[UP]</button>
+            <div id="project-file-editor-current-path"
+              class="flex-1 bg-black border border-cyan-800 text-cyan-300 text-[9px] tracking-widest p-2 font-mono truncate">
+              /
+            </div>
+          </div>
+          <div id="project-file-editor-list"
+            class="flex flex-col gap-1 max-h-[58vh] overflow-y-auto border border-cyan-900/40 bg-black p-2">
+            <div class="text-cyan-800 italic text-center text-[10px] py-4">Select a project to browse files.</div>
+          </div>
+        </div>
+
+        <div class="md:col-span-2 flex flex-col gap-2">
+          <div id="project-file-editor-current-file"
+            class="bg-black border border-cyan-800 text-cyan-300 text-[9px] tracking-widest p-2 font-mono truncate">NO
+            FILE
+            SELECTED</div>
+          <textarea id="project-file-editor-content"
+            class="w-full min-h-[52vh] bg-black border border-cyan-800 text-cyan-200 text-[11px] tracking-wide p-3 outline-none font-mono"
+            spellcheck="false" placeholder="Select a file from the left panel..."></textarea>
+          <div id="project-file-editor-error" class="hidden text-[9px] text-red-400 font-bold tracking-widest"></div>
+          <div class="flex justify-end gap-3 pt-2 border-t border-cyan-900/40">
+            <button onclick="closeProjectFileEditor()"
+              class="btn-ui btn-ui-cyan px-5 py-2 text-[10px] font-bold tracking-widest">CLOSE</button>
+            <button onclick="saveProjectFileContent()"
+              class="btn-ui btn-ui-emerald px-5 py-2 text-[10px] font-bold tracking-widest">SAVE FILE</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

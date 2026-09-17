@@ -667,6 +667,11 @@ window.renderProjectsList = function (projects) {
     editBtn.textContent = 'EDIT';
     editBtn.addEventListener('click', () => window.openEditProjectForm(proj));
 
+    const filesBtn = document.createElement('button');
+    filesBtn.className = 'btn-ui btn-ui-cyan text-[9px] py-1 px-3 font-bold tracking-widest';
+    filesBtn.textContent = 'FILES';
+    filesBtn.addEventListener('click', () => window.openProjectFileEditor(proj.name));
+
     const moveBtn = document.createElement('button');
     moveBtn.className = 'btn-ui btn-ui-zinc text-[9px] py-1 px-3 font-bold tracking-widest';
     moveBtn.textContent = 'MOVE CORE';
@@ -694,6 +699,7 @@ window.renderProjectsList = function (projects) {
 
     actions.appendChild(runBtn);
     actions.appendChild(editBtn);
+    actions.appendChild(filesBtn);
     actions.appendChild(moveBtn);
     actions.appendChild(removeBtn);
     actions.appendChild(deleteBtn);
@@ -734,6 +740,173 @@ window.deleteProjectFromCore = function (project) {
 
   window.logToTerminal('UI_OVERRIDE', `Deleting project ${name} and core files`, 'text-red-500 font-bold');
   window.AppState.socket?.emit('delete_project_from_core', { name: name });
+};
+
+window.closeProjectFileEditor = function () {
+  const modal = document.getElementById('project-file-editor-modal');
+  if (modal) modal.classList.add('hidden');
+  window.AppState.fileEditorProject = null;
+  window.AppState.fileEditorPath = '';
+  window.AppState.fileEditorCurrentFile = '';
+  const filePathEl = document.getElementById('project-file-editor-current-file');
+  if (filePathEl) filePathEl.textContent = 'NO FILE SELECTED';
+  const fileContent = document.getElementById('project-file-editor-content');
+  if (fileContent) fileContent.value = '';
+};
+
+function showProjectFileEditorError(message) {
+  const errEl = document.getElementById('project-file-editor-error');
+  if (!errEl) return;
+  if (message) {
+    errEl.textContent = String(message || 'FILE EDITOR ERROR').toUpperCase();
+    errEl.classList.remove('hidden');
+  } else {
+    errEl.textContent = '';
+    errEl.classList.add('hidden');
+  }
+}
+
+function renderProjectFileListing(payload) {
+  const listEl = document.getElementById('project-file-editor-list');
+  const currentPathEl = document.getElementById('project-file-editor-current-path');
+  const upBtn = document.getElementById('project-file-editor-up-btn');
+  if (!listEl || !currentPathEl || !upBtn) return;
+
+  const relPath = String((payload && payload.path) || '').trim();
+  window.AppState.fileEditorPath = relPath;
+  currentPathEl.textContent = relPath || '/';
+  upBtn.disabled = !relPath;
+
+  listEl.innerHTML = '';
+  const dirs = Array.isArray(payload && payload.dirs) ? payload.dirs : [];
+  const files = Array.isArray(payload && payload.files) ? payload.files : [];
+
+  if (!dirs.length && !files.length) {
+    listEl.innerHTML = '<div class="text-cyan-800 italic text-center text-[10px] py-4">No files in this folder.</div>';
+    return;
+  }
+
+  dirs.forEach((item) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'shrink-0 text-left text-[10px] text-cyan-300 hover:text-white font-mono tracking-wide px-2 py-1.5 border border-transparent hover:border-cyan-700 hover:bg-cyan-950/50 transition-all truncate cursor-pointer';
+    row.textContent = `▸ ${item.name}`;
+    row.title = item.path;
+    row.addEventListener('click', () => window.loadProjectFileListing(item.path));
+    listEl.appendChild(row);
+  });
+
+  files.forEach((item) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'shrink-0 text-left text-[10px] text-cyan-500 hover:text-cyan-200 font-mono tracking-wide px-2 py-1.5 border border-transparent hover:border-cyan-700 hover:bg-cyan-950/50 transition-all truncate cursor-pointer';
+    row.textContent = `· ${item.name}`;
+    row.title = item.path;
+    row.addEventListener('click', () => window.loadProjectFileContent(item.path));
+    listEl.appendChild(row);
+  });
+}
+
+window.loadProjectFileListing = async function (relativePath = '') {
+  const projectName = window.AppState.fileEditorProject;
+  if (!projectName) return;
+
+  showProjectFileEditorError(null);
+  try {
+    const query = encodeURIComponent(relativePath || '');
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/files?path=${query}`, { cache: 'no-store' });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      showProjectFileEditorError(payload.error || 'Unable to load file listing.');
+      return;
+    }
+    renderProjectFileListing(payload);
+  } catch (error) {
+    showProjectFileEditorError('Unable to load file listing.');
+  }
+};
+
+window.loadProjectFileContent = async function (relativePath) {
+  const projectName = window.AppState.fileEditorProject;
+  if (!projectName) return;
+
+  showProjectFileEditorError(null);
+  try {
+    const query = encodeURIComponent(relativePath || '');
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/file?path=${query}`, { cache: 'no-store' });
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      showProjectFileEditorError(payload.error || 'Unable to open file.');
+      return;
+    }
+
+    window.AppState.fileEditorCurrentFile = payload.path || relativePath;
+    const filePathEl = document.getElementById('project-file-editor-current-file');
+    if (filePathEl) filePathEl.textContent = window.AppState.fileEditorCurrentFile;
+    const editor = document.getElementById('project-file-editor-content');
+    if (editor) editor.value = payload.content || '';
+  } catch (error) {
+    showProjectFileEditorError('Unable to open file.');
+  }
+};
+
+window.saveProjectFileContent = async function () {
+  const projectName = window.AppState.fileEditorProject;
+  const filePath = window.AppState.fileEditorCurrentFile;
+  const editor = document.getElementById('project-file-editor-content');
+  if (!projectName || !filePath || !editor) {
+    showProjectFileEditorError('Select a file before saving.');
+    return;
+  }
+
+  showProjectFileEditorError(null);
+  try {
+    const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/file`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path: filePath,
+        content: editor.value,
+      }),
+    });
+
+    const payload = await response.json();
+    if (!response.ok || !payload.ok) {
+      showProjectFileEditorError(payload.error || 'Unable to save file.');
+      return;
+    }
+
+    window.logToTerminal('PROJECTS', `Saved file ${filePath} in ${projectName}.`, 'text-emerald-400 font-bold');
+  } catch (error) {
+    showProjectFileEditorError('Unable to save file.');
+  }
+};
+
+window.openProjectFileEditor = async function (projectName) {
+  const name = String(projectName || '').trim();
+  if (!name) return;
+
+  window.AppState.fileEditorProject = name;
+  window.AppState.fileEditorPath = '';
+  window.AppState.fileEditorCurrentFile = '';
+  const modal = document.getElementById('project-file-editor-modal');
+  const title = document.getElementById('project-file-editor-project');
+  const filePathEl = document.getElementById('project-file-editor-current-file');
+  const editor = document.getElementById('project-file-editor-content');
+  if (title) title.textContent = name;
+  if (filePathEl) filePathEl.textContent = 'NO FILE SELECTED';
+  if (editor) editor.value = '';
+  showProjectFileEditorError(null);
+  if (modal) modal.classList.remove('hidden');
+  await window.loadProjectFileListing('');
+};
+
+window.navigateProjectFileEditorUp = function () {
+  const current = String(window.AppState.fileEditorPath || '').trim();
+  if (!current) return;
+  const parts = current.split('/').filter(Boolean);
+  parts.pop();
+  window.loadProjectFileListing(parts.join('/'));
 };
 
 window.openAddProjectForm = async function () {

@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jarvis_assistant.auth import ensure_default_admin_user, verify_user, get_user_store_path, normalize_role_name
+from assistant.auth import ensure_default_admin_user, verify_user, get_user_store_path, normalize_role_name
 
 
 class TestAdminAuth(unittest.TestCase):

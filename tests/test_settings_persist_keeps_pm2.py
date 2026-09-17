@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jarvis_assistant.core.command_center import _load_settings_file, _persist_settings_file
+from assistant.core.command_center import _load_settings_file, _persist_settings_file
 
 
 class TestPersistSettingsKeepsPm2(unittest.TestCase):

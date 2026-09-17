@@ -5,7 +5,7 @@ from pathlib import Path
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from jarvis_assistant.config import (
+from assistant.config import (
     BASE_DIR,
     DEFAULT_ADMIN_PASSWORD,
     DEFAULT_ADMIN_USER_ID,
