@@ -5,11 +5,11 @@ import json
 import os
 import shutil
 
-from jarvis_assistant.services.voice import JarvisVoiceEngine
-from jarvis_assistant.services.ear import JarvisMultimodalEar
+from assistant.services.voice import JarvisVoiceEngine
+from assistant.services.ear import JarvisMultimodalEar
 # FIXED: Imported `broadcast` so main.py can stream logs to the UI during pre-flight checks
-from jarvis_assistant.core.command_center import display_advanced_status, process_command, broadcast, _load_settings_file
-from jarvis_assistant.config import (
+from assistant.core.command_center import display_advanced_status, process_command, broadcast, _load_settings_file
+from assistant.config import (
     get_port_from_env,
     SETTINGS_FILE,
     PM2_EXECUTABLE,
@@ -23,11 +23,11 @@ from jarvis_assistant.config import (
     REDIS_START_CMD,
     RABBITMQ_CONTAINER_NAME,
 )
-from jarvis_assistant.registry.projects import get_projects
+from assistant.registry.projects import get_projects
 
-from jarvis_assistant.services import web_server
-from jarvis_assistant.core import boot_sequence
-from jarvis_assistant.services import pm2_manager
+from assistant.services import web_server
+from assistant.core import boot_sequence
+from assistant.services import pm2_manager
 
 def handle_ui_command_routing(command_text, tenant_id=None):
     """Routes commands arriving via the web input straight into the core processor."""

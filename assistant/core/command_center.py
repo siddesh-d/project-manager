@@ -7,15 +7,17 @@ import hashlib
 import queue
 import threading
 import sys
-from jarvis_assistant.registry.projects import (
+import shlex
+import shutil
+from assistant.registry.projects import (
     get_projects,
     refresh_project_deployment_profile,
     update_runtime_state,
 )
-from jarvis_assistant.config import SETTINGS_FILE, PM2_EXECUTABLE, DEFAULT_PM2_FIELD_CONFIG
-from jarvis_assistant.config import ASSISTANT_LOG_LABEL
+from assistant.config import SETTINGS_FILE, PM2_EXECUTABLE, DEFAULT_PM2_FIELD_CONFIG
+from assistant.config import ASSISTANT_LOG_LABEL
 
-from jarvis_assistant.services import web_server
+from assistant.services import web_server
 
 # =====================================================================
 # GLOBAL CONVERSATION STATE & UNIFIED PIPELINES
@@ -330,7 +332,8 @@ def resolve_pm2_target(target_name):
 
 
 def _run_command_with_output(command, cwd, extra_env=None):
-    env = os.environ.copy()
+    env = _build_command_env(extra_env)
+    shell_mode = isinstance(command, str)
     if isinstance(extra_env, dict):
         for key, value in extra_env.items():
             if key:
@@ -338,7 +341,7 @@ def _run_command_with_output(command, cwd, extra_env=None):
     process = subprocess.run(
         command,
         cwd=cwd,
-        shell=True,
+        shell=shell_mode,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -347,6 +350,149 @@ def _run_command_with_output(command, cwd, extra_env=None):
         env=env,
     )
     return process.returncode, process.stdout or ""
+
+
+def _build_command_env(extra_env=None):
+    env = os.environ.copy()
+    if isinstance(extra_env, dict):
+        for key, value in extra_env.items():
+            if key:
+                env[str(key)] = str(value)
+
+    merged_paths = []
+    seen = set()
+    existing_path = str(env.get("PATH") or "")
+    for segment in existing_path.split(os.pathsep):
+        seg = str(segment or "").strip()
+        if not seg:
+            continue
+        key = os.path.normcase(seg)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged_paths.append(seg)
+
+    extra_bin_path = str(os.getenv("JARVIS_EXTRA_BIN_PATH") or "").strip()
+    if extra_bin_path:
+        for segment in extra_bin_path.split(os.pathsep):
+            seg = str(segment or "").strip()
+            if not seg:
+                continue
+            key = os.path.normcase(seg)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged_paths.append(seg)
+
+    if os.name != "nt":
+        for fallback in [
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/local/sbin",
+            "/usr/sbin",
+            "/sbin",
+            "/opt/homebrew/bin",
+            "/home/linuxbrew/.linuxbrew/bin",
+        ]:
+            key = os.path.normcase(fallback)
+            if key in seen:
+                continue
+            seen.add(key)
+            merged_paths.append(fallback)
+
+    env["PATH"] = os.pathsep.join(merged_paths)
+    return env
+
+
+def _resolve_executable(command_name, env=None):
+    if not command_name:
+        return None
+
+    env = env or _build_command_env({})
+    token = str(command_name).strip()
+    if not token:
+        return None
+
+    if any(ch in token for ch in ('/', '\\')):
+        return token if os.path.exists(token) else None
+
+    candidates = [token]
+    if os.name == "nt":
+        lowered = token.lower()
+        if lowered == "npm":
+            candidates = ["npm.cmd", "npm.exe", "npm"]
+        elif lowered == "yarn":
+            candidates = ["yarn.cmd", "yarn.exe", "yarn"]
+        elif lowered == "pnpm":
+            candidates = ["pnpm.cmd", "pnpm.exe", "pnpm"]
+
+    search_path = env.get("PATH")
+    for candidate in candidates:
+        resolved = shutil.which(candidate, path=search_path)
+        if resolved:
+            return resolved
+    return None
+
+
+def _detect_node_package_manager(path):
+    if os.path.exists(os.path.join(path, "pnpm-lock.yaml")):
+        return "pnpm"
+    if os.path.exists(os.path.join(path, "yarn.lock")):
+        return "yarn"
+    return "npm"
+
+
+def _prepare_install_command(install_command, project_type, project_path, extra_env=None):
+    env = _build_command_env(extra_env)
+
+    if isinstance(install_command, (list, tuple)):
+        command_list = [str(part) for part in install_command if str(part).strip()]
+    else:
+        command_text = str(install_command or "").strip()
+        if not command_text:
+            return None, None
+        command_list = None
+
+    if command_list:
+        executable_token = command_list[0]
+        resolved = _resolve_executable(executable_token, env)
+        if not resolved:
+            lowered = executable_token.lower()
+            if lowered in {"npm", "yarn", "pnpm"}:
+                return None, (
+                    f"{lowered} is not installed or not available in PATH. "
+                    f"Install Node.js tooling ({lowered}) and retry. "
+                    f"If launching with sudo, ensure PATH includes standard binary folders "
+                    f"or set JARVIS_EXTRA_BIN_PATH."
+                )
+            return None, f"Required command '{executable_token}' is not available in PATH."
+        command_list[0] = resolved
+        return command_list, None
+
+    tokens = []
+    try:
+        tokens = shlex.split(command_text, posix=(os.name != "nt"))
+    except ValueError:
+        tokens = command_text.split()
+
+    if tokens:
+        tool = tokens[0]
+        lowered = tool.lower()
+        if lowered in {"npm", "yarn", "pnpm"}:
+            resolved = _resolve_executable(lowered, env)
+            if not resolved:
+                return None, (
+                    f"{lowered} is not installed or not available in PATH. "
+                    f"Install Node.js tooling ({lowered}) and retry. "
+                    f"If launching with sudo, ensure PATH includes standard binary folders "
+                    f"or set JARVIS_EXTRA_BIN_PATH."
+                )
+
+    if project_type == "node" and not os.path.exists(os.path.join(project_path, "package.json")):
+        return None, "package.json is missing for Node project dependency install."
+
+    return command_text, None
 
 
 def _load_dotenv_vars(project_path):
@@ -424,15 +570,16 @@ def _derive_install_command(path, profile):
 
     project_type = str(profile.get("project_type") or "custom")
     if project_type == "node":
-        if os.path.exists(os.path.join(path, "pnpm-lock.yaml")):
-            return "pnpm install --frozen-lockfile"
-        if os.path.exists(os.path.join(path, "yarn.lock")):
-            return "yarn install --frozen-lockfile"
+        manager = _detect_node_package_manager(path)
+        if manager == "pnpm":
+            return ["pnpm", "install", "--frozen-lockfile"]
+        if manager == "yarn":
+            return ["yarn", "install", "--frozen-lockfile"]
         if os.path.exists(os.path.join(path, "package-lock.json")):
-            return "npm ci"
-        return "npm install"
+            return ["npm", "ci"]
+        return ["npm", "install"]
     if project_type == "python" and os.path.exists(os.path.join(path, "requirements.txt")):
-        return "pip install -r requirements.txt"
+        return [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"]
     return ""
 
 
@@ -552,8 +699,23 @@ def _prepare_project_runtime(proj, voice):
         and ((not deps_installed) or install_changed or missing_install_state)
     )
     if should_install:
+        prepared_install_command, preparation_error = _prepare_install_command(
+            install_command,
+            project_type,
+            path,
+            extra_env=project_env,
+        )
+        if preparation_error:
+            update_runtime_state(name, {
+                "last_error_stage": "install",
+                "last_error": preparation_error,
+                "last_error_at": int(time.time()),
+            })
+            broadcast(voice, f"Dependency installation failed for {proj.get('friendly_name', name)}.", color="text-red-400", speak=True)
+            return False
+
         broadcast(voice, f"Installing dependencies for {proj.get('friendly_name', name)}...", color="text-cyan-400", speak=False)
-        code, output = _run_command_with_output(install_command, path, extra_env=project_env)
+        code, output = _run_command_with_output(prepared_install_command, path, extra_env=project_env)
         if code != 0:
             update_runtime_state(name, {
                 "last_error_stage": "install",
@@ -716,7 +878,16 @@ def intelligent_service_start(proj, voice, ear):
             return False, failure_message
 
         broadcast(voice, f"Missing module detected for {proj['friendly_name']}. Installing dependencies and retrying...", color="text-amber-400", speak=False)
-        install_code, install_output = _run_command_with_output(install_command, path, extra_env=project_env)
+        prepared_install_command, preparation_error = _prepare_install_command(
+            install_command,
+            project_type,
+            path,
+            extra_env=project_env,
+        )
+        if preparation_error:
+            return False, preparation_error
+
+        install_code, install_output = _run_command_with_output(prepared_install_command, path, extra_env=project_env)
         if install_code != 0:
             return False, install_output[-1200:] or f"Dependency installation failed (exit {install_code})."
 

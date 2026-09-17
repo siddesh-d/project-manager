@@ -8,7 +8,7 @@ import threading
 import shutil
 from pathlib import Path
 
-from jarvis_assistant.config import PROJECTS_FILE
+from assistant.config import PROJECTS_FILE
 
 # =====================================================================
 # JSON-BACKED PROJECT REGISTRY
@@ -41,7 +41,7 @@ def _expand_project_path(path_value):
 
     expanded = path_value.replace("${HOME}", str(Path.home())).replace("$HOME", str(Path.home()))
     expanded = os.path.expandvars(os.path.expanduser(expanded))
-    return os.path.normpath(expanded)
+    return os.path.realpath(os.path.abspath(os.path.normpath(expanded)))
 
 
 def _to_portable_path(path_value):
@@ -319,11 +319,19 @@ def _normalize_project_entry(project):
         "path": path,
     }
 
+    tenant_id = str(project.get("tenant_id") or "").strip()
+    if tenant_id:
+        normalized["tenant_id"] = tenant_id
+
     deployment_profile = _normalize_deployment_profile(project.get("deployment_profile", {}), path)
     normalized["deployment_profile"] = deployment_profile
 
     runtime_state = project.get("runtime_state") if isinstance(project.get("runtime_state"), dict) else {}
-    normalized["runtime_state"] = dict(runtime_state)
+    normalized_runtime = dict(runtime_state)
+    if path and not os.path.isdir(path):
+        normalized_runtime.setdefault("last_error_stage", "path")
+        normalized_runtime.setdefault("last_error", f"Project path is not accessible: {path}")
+    normalized["runtime_state"] = normalized_runtime
 
     custom_start = project.get("custom_start")
     if custom_start:
@@ -408,9 +416,14 @@ def load_projects():
             if not isinstance(loaded, list):
                 raise ValueError("Invalid projects file structure")
             _projects = []
+            seen_names = set()
             for item in loaded:
                 normalized = _normalize_project_entry(item)
                 if normalized and normalized["name"]:
+                    lowered_name = normalized["name"].lower()
+                    if lowered_name in seen_names:
+                        continue
+                    seen_names.add(lowered_name)
                     _projects.append(normalized)
         except Exception:
             try:
@@ -524,14 +537,14 @@ def add_project(name, friendly_name, path, custom_start=None, storage_mode="curr
                 return False, "Destination project folder already exists and is not empty."
             try:
                 _sync_project_tree(path, target_path, deployment_profile, prune=False)
-                final_path = target_path
+                final_path = _expand_project_path(target_path)
             except Exception as e:
                 return False, f"Failed to deploy project files: {e}"
 
         entry = {
             "name": name,
             "friendly_name": friendly_name,
-            "path": final_path,
+            "path": _expand_project_path(final_path),
             "deployment_profile": deployment_profile,
             "runtime_state": {},
         }

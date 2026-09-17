@@ -1,6 +1,6 @@
 import unittest
 
-from jarvis_assistant.services.web_server import app
+from assistant.services.web_server import app
 
 
 class TestSessionFlow(unittest.TestCase):

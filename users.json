@@ -7,16 +7,7 @@
       "tenant_id": null,
       "project_ids": [],
       "permissions": [],
-      "password_hash": "scrypt:32768:8:1$mccYycOp2IEvm0b7$091aeb02d7f729842ac15343041e60608dee6db36c2f6c09e151c4b4a0beecaed165e129e3765e508338660e219d49d71aa2645b023f9a477151d4d63971401a"
-    },
-    {
-      "id": "s-admin",
-      "username": "s",
-      "role": "tenant_admin",
-      "tenant_id": "s",
-      "project_ids": [],
-      "permissions": [],
-      "password_hash": "scrypt:32768:8:1$rPEQIihdViDKfHCY$af0dd889468b78fed1b330f1ad90a95171e2d311d4710415f2a1d38be3849f20de5ba7a8df146461eba9c8c103f4f1b8a904d1e6a0812950e9f1e2090e2b7302"
+      "password_hash": "scrypt:32768:8:1$2tsy5zC3IeTwc5x8$b71ac03da6ce66e714647b13f869559d59d9d6a143120026aa596d1243faf9081bddc6347292fdfb959e500dc7cdf81f59c0c39d2d7bc7a4413c9a9f0d89fac9"
     }
   ]
 }

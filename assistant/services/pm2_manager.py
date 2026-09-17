@@ -6,7 +6,7 @@ import os
 import re
 import threading
 
-from jarvis_assistant.config import PM2_EXECUTABLE
+from assistant.config import PM2_EXECUTABLE
 
 # Background-polled cache so get_host_metrics() never blocks the telemetry loop
 _cached_host_metrics = None

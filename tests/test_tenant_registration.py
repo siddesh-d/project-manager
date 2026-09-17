@@ -6,14 +6,14 @@ from unittest.mock import MagicMock, patch
 
 from flask import session
 
-from jarvis_assistant.auth import (
+from assistant.auth import (
     create_tenant_registration,
     get_tenant_by_id,
     get_tenant_core_project_path,
     get_tenant_user_store,
     user_has_permission,
 )
-from jarvis_assistant.services import web_server
+from assistant.services import web_server
 
 
 class TestTenantRegistration(unittest.TestCase):
@@ -154,7 +154,7 @@ class TestTenantRegistration(unittest.TestCase):
                     admin_password="Passw0rd!",
                     created_by="admin",
                 )
-                from jarvis_assistant.services.web_server import app
+                from assistant.services.web_server import app
                 app.config["TESTING"] = True
                 client = app.test_client()
                 login = client.post("/api/login", json={"username": "admin", "password": "admin"})
@@ -241,7 +241,7 @@ class TestTenantRegistration(unittest.TestCase):
                     admin_password="Passw0rd!",
                     created_by="admin",
                 )
-                from jarvis_assistant.services.web_server import app
+                from assistant.services.web_server import app
                 app.config["TESTING"] = True
                 client = app.test_client()
                 login = client.post("/api/login", json={"username": "gamma-admin", "password": "Passw0rd!"})
@@ -296,7 +296,7 @@ class TestTenantRegistration(unittest.TestCase):
                     admin_password="Passw0rd!",
                     created_by="admin",
                 )
-                from jarvis_assistant.services.web_server import app
+                from assistant.services.web_server import app
                 app.config["TESTING"] = True
                 client = app.test_client()
                 login = client.post("/api/login", json={"username": "beta-admin", "password": "Passw0rd!"})
@@ -349,10 +349,10 @@ class TestTenantRegistration(unittest.TestCase):
                     admin_password="Passw0rd!",
                     created_by="admin",
                 )
-                from jarvis_assistant.auth import add_tenant_user
+                from assistant.auth import add_tenant_user
                 add_tenant_user(tenant["tenant_id"], "alpha-user", "Passw0rd!", role="tenant_user", actor={"role": "platform_admin"})
 
-                import jarvis_assistant.auth as auth_module
+                import assistant.auth as auth_module
                 with web_server.app.test_client() as client:
                     with client.session_transaction() as session_obj:
                         session_obj["user_id"] = "admin"
