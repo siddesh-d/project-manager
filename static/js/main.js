@@ -152,7 +152,7 @@ function syncCoreCardsInPlace(coreContainer, services) {
 }
 
 // Connect to the local server
-const socketPath = (window.APP_CONFIG && window.APP_CONFIG.SOCKET_PATH) || '/jarvis.io';
+const socketPath = (window.APP_CONFIG && window.APP_CONFIG.SOCKET_PATH) || '/qcc.io';
 const assistantLogLabel = (window.APP_CONFIG && window.APP_CONFIG.ASSISTANT_LOG_LABEL) || 'QUASON';
 window.AppState.socket = io({ path: socketPath, upgrade: true, rememberUpgrade: true });
 const socket = window.AppState.socket;
@@ -273,12 +273,17 @@ socket.on('pm2_telemetry', (data) => {
                     <span class="text-[12px] font-bold text-zinc-500 uppercase tracking-wide truncate pr-2">${displayName} <span class="text-red-500/70 ml-1 text-[9px] tracking-widest">(NOT ACTIVE)</span></span>
                     <span class="text-[9px] text-red-500 bg-red-950/30 border border-red-800/50 px-1.5 uppercase shrink-0">REMOVED</span>
                 </div>
+                <div data-role="service-path" class="text-[9px] text-cyan-600/80 font-mono truncate mb-1"></div>
                 <div class="text-[9px] text-zinc-500/80 mb-3 italic leading-relaxed">This service was previously removed. You can restore it or clear its old logs.</div>
                 <div class="flex gap-1 pt-2 border-t border-red-900/30">
                   <button onclick="serviceAction('start', '${srv.name}')" class="btn-ui btn-ui-emerald flex-[2] text-[9px] py-1 font-bold tracking-widest">RESTORE SERVICE</button>
                   <button onclick="serviceAction('flush', '${srv.name}')" class="btn-ui btn-ui-zinc flex-1 text-[9px] py-1">CLEAR LOGS</button>
                 </div>
             `;
+      const servicePath = card.querySelector('[data-role="service-path"]');
+      servicePath.textContent = srv.path || '';
+      servicePath.title = srv.path || '';
+      servicePath.hidden = !srv.path;
       if (isAMR) amrContainer.appendChild(card);
       else coreCardsElements.push(card);
       return;
@@ -319,6 +324,7 @@ socket.on('pm2_telemetry', (data) => {
           </div>
             </div>
             <div class="text-[9px] text-${colorBase}-600/80 mb-2">${subText}</div>
+            <div data-role="service-path" class="text-[9px] text-cyan-600/80 font-mono truncate mb-1"></div>
             <div class="flex items-center gap-2 text-[9px] text-${colorBase}-500">
                 <span class="w-8">CPU</span>
                 <div class="flex-1 h-1.5 bg-${colorBase}-950 border border-${colorBase}-900 relative">
@@ -335,6 +341,10 @@ socket.on('pm2_telemetry', (data) => {
                 ${controlsHTML}
             </div>
         `;
+    const servicePath = card.querySelector('[data-role="service-path"]');
+    servicePath.textContent = srv.path || '';
+    servicePath.title = srv.path || '';
+    servicePath.hidden = !srv.path;
 
     if (isAMR) amrContainer.appendChild(card);
     else coreCardsElements.push(card);

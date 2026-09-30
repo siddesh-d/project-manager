@@ -560,7 +560,7 @@ def _get_effective_core_project_path_for_user(user=None):
     return tenant_path or ''
 
 
-def _build_pm2_service_payload(proc, port='N/A'):
+def _build_pm2_service_payload(proc, port='N/A', project_path=None):
     pm2_env = proc.get('pm2_env') or {}
     monit = proc.get('monit') or {}
     mem_bytes = int(monit.get('memory', 0) or 0)
@@ -572,6 +572,8 @@ def _build_pm2_service_payload(proc, port='N/A'):
         'memory': f"{int(mem_bytes / (1024 * 1024))}MB",
         'port': port,
     }
+    if project_path:
+        payload['path'] = project_path
 
     field_map = {
         'uptime': _format_pm2_uptime(pm2_env.get('pm_uptime') or pm2_env.get('uptime') or 0),
@@ -636,11 +638,13 @@ def stream_log_to_ui(source, message, color="text-zinc-300", tenant_id=None, roo
         if role == 'platform_admin' or (tenant_id and user_tenant_id == str(tenant_id).strip()):
             socketio.emit('log_stream', payload, room=sid)
 
+
 @app.before_request
 def enforce_authentication():
     if request.path.startswith('/static/'):
         return None
-    if request.path in {'/', '/api/login', '/api/session', '/api/logout'}:
+    # Modified line below to include '/api/public-log' in the whitelist
+    if request.path in {'/', '/api/login', '/api/session', '/api/logout', '/api/public-log'}:
         return None
 
     user = _get_authenticated_user()
@@ -711,6 +715,49 @@ def check_session():
     return jsonify({'authenticated': True, 'user': build_session_user(user)})
 
 
+@app.route('/api/public-log', methods=['POST'])
+def public_log_endpoint():
+    """
+    Public API that requires no authentication.
+    Logs the API call timestamp, IP address, and request body.
+    """
+    try:
+        log_file_path = os.path.join(str(BASE_DIR), 'public_api_calls.log')
+
+        current_time = time.strftime('%Y-%m-%d %H:%M:%S')
+        client_ip = request.remote_addr
+
+        # Parse JSON request body safely (returns a dictionary or None)
+        request_data = request.get_json(silent=True) or {}
+        
+        # Get raw request body as string for logging purposes
+        request_body_str = request.get_data(as_text=True)
+
+        # Append the log entry
+        with open(log_file_path, 'a', encoding='utf-8') as f:
+            f.write(
+                f"[{current_time}] "
+                f"Public API was called by IP: {client_ip}\n"
+                f"Request Body: {request_body_str}\n"
+                f"{'-' * 80}\n"
+            )
+
+        # Extract 'id' safely from the parsed dictionary
+        code_id = request_data.get('id', '')
+
+        return jsonify({
+            'code': code_id,
+            'msg': 'ok',
+            'create_on': current_time,
+            'message': 'Log entry created successfully.'
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'error': f'Failed to write log: {str(e)}'
+        }), 500
+    
 @app.route('/api/tenants', methods=['GET'])
 def list_tenants():
     if not _require_admin_auth():
@@ -1703,7 +1750,7 @@ def pm2_telemetry_loop():
                 port = get_port_from_env(proj.get("path", ""))
                 if proj_name_ci in pm2_status_map_ci:
                     p = pm2_status_map_ci[proj_name_ci]
-                    payload.append(_build_pm2_service_payload(p, port))
+                    payload.append(_build_pm2_service_payload(p, port, proj.get('path')))
                 else:
                     # Avoid false "removed" flaps when PM2 snapshot is temporarily unavailable.
                     fallback_status = 'removed' if parsed_live_snapshot else 'unknown'
@@ -1713,6 +1760,7 @@ def pm2_telemetry_loop():
                         'cpu': 0,
                         'memory': '0MB',
                         'port': port,
+                        'path': proj.get('path', ''),
                     })
             
             # 2. CAPTURE DYNAMIC AD-HOC AMRs (Dynamic Virtual Services)
