@@ -5,6 +5,8 @@ import json
 import os
 import re
 import threading
+import ctypes
+from ctypes import wintypes
 
 from assistant.config import PM2_EXECUTABLE
 
@@ -15,15 +17,51 @@ _host_metrics_lock = threading.Lock()
 
 def _fallback_host_metrics():
     if os.name == "nt":
-        cpu_out = subprocess.check_output('wmic cpu get loadpercentage', shell=True, text=True)
-        cpu_match = re.search(r'\d+', cpu_out)
-        cpu = float(cpu_match.group()) if cpu_match else 0.0
+        class FILETIME(ctypes.Structure):
+            _fields_ = [("low", wintypes.DWORD), ("high", wintypes.DWORD)]
 
-        mem_out = subprocess.check_output('wmic OS get FreePhysicalMemory,TotalVisibleMemorySize /Value', shell=True, text=True)
-        free_mem = float(re.search(r'FreePhysicalMemory=(\d+)', mem_out).group(1))
-        tot_mem = float(re.search(r'TotalVisibleMemorySize=(\d+)', mem_out).group(1))
-        mem = ((tot_mem - free_mem) / tot_mem) * 100
-        return cpu, mem
+        class MEMORYSTATUSEX(ctypes.Structure):
+            _fields_ = [
+                ("length", wintypes.DWORD),
+                ("memory_load", wintypes.DWORD),
+                ("total_phys", ctypes.c_ulonglong),
+                ("avail_phys", ctypes.c_ulonglong),
+                ("total_page_file", ctypes.c_ulonglong),
+                ("avail_page_file", ctypes.c_ulonglong),
+                ("total_virtual", ctypes.c_ulonglong),
+                ("avail_virtual", ctypes.c_ulonglong),
+                ("avail_extended_virtual", ctypes.c_ulonglong),
+            ]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        get_system_times = kernel32.GetSystemTimes
+        get_system_times.argtypes = [
+            ctypes.POINTER(FILETIME),
+            ctypes.POINTER(FILETIME),
+            ctypes.POINTER(FILETIME),
+        ]
+        get_system_times.restype = wintypes.BOOL
+
+        def read_cpu_times():
+            idle, kernel, user = FILETIME(), FILETIME(), FILETIME()
+            if not get_system_times(ctypes.byref(idle), ctypes.byref(kernel), ctypes.byref(user)):
+                raise ctypes.WinError(ctypes.get_last_error())
+
+            to_int = lambda value: (value.high << 32) | value.low
+            return to_int(idle), to_int(kernel), to_int(user)
+
+        first_idle, first_kernel, first_user = read_cpu_times()
+        time.sleep(1)
+        last_idle, last_kernel, last_user = read_cpu_times()
+        total_delta = (last_kernel - first_kernel) + (last_user - first_user)
+        idle_delta = last_idle - first_idle
+        cpu = 100 * (total_delta - idle_delta) / total_delta if total_delta > 0 else 0.0
+
+        memory_status = MEMORYSTATUSEX()
+        memory_status.length = ctypes.sizeof(MEMORYSTATUSEX)
+        if not kernel32.GlobalMemoryStatusEx(ctypes.byref(memory_status)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return cpu, float(memory_status.memory_load)
 
     cpu_count = os.cpu_count() or 1
     load1 = os.getloadavg()[0] if hasattr(os, "getloadavg") else 0.0

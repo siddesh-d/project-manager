@@ -325,7 +325,7 @@ function updateClock() {
 }
 setInterval(updateClock, 1000); updateClock();
 
-const socket = io({ path: (window.APP_CONFIG && window.APP_CONFIG.SOCKET_PATH) || '/jarvis.io' });
+const socket = io({ path: (window.APP_CONFIG && window.APP_CONFIG.SOCKET_PATH) || '/qcc.io' });
 const assistantLogLabel = (window.APP_CONFIG && window.APP_CONFIG.ASSISTANT_LOG_LABEL) || 'QUASON';
 const terminalStream = document.getElementById('terminal-stream');
 const serviceLogStream = document.getElementById('service-log-stream');

@@ -11,6 +11,15 @@ from assistant.services import web_server
 
 
 class TestProjectLifecycle(unittest.TestCase):
+    def test_pm2_service_payload_includes_registry_project_path(self):
+        payload = web_server._build_pm2_service_payload(
+            {"name": "core-api", "pm2_env": {"status": "online"}, "monit": {}},
+            8080,
+            "C:/projects/core-api",
+        )
+
+        self.assertEqual(payload["path"], "C:/projects/core-api")
+
     def test_load_projects_preserves_tenant_id(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             projects_file = Path(tmpdir) / "projects.json"

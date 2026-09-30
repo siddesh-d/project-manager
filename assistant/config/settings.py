@@ -26,7 +26,7 @@ def _env_int(name, default):
 
 
 def _normalize_socket_path(value):
-    path = (value or "/jarvis.io").strip()
+    path = (value or "/qcc.io").strip()
     if not path.startswith("/"):
         path = f"/{path}"
     return path
@@ -35,7 +35,7 @@ def _normalize_socket_path(value):
 SERVER_HOST = os.getenv("JARVIS_SERVER_HOST", "0.0.0.0")
 SERVER_PORT = _env_int("JARVIS_SERVER_PORT", 9999)
 SECRET_KEY = os.getenv("JARVIS_SECRET_KEY", "jarvis_secret_system_token_9999")
-SOCKET_PATH = _normalize_socket_path(os.getenv("JARVIS_SOCKET_PATH", "/jarvis.io"))
+SOCKET_PATH = _normalize_socket_path(os.getenv("JARVIS_SOCKET_PATH", "/qcc.io"))
 WEB_DEBUG = _env_bool("JARVIS_WEB_DEBUG", True)
 ASSISTANT_LOG_LABEL = os.getenv("JARVIS_LOG_LABEL", "QUASON").strip() or "QUASON"
 
