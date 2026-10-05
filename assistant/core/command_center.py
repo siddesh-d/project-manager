@@ -847,7 +847,7 @@ def _get_runtime_error_summary(project_name):
 # =====================================================================
 # INTELLIGENT COMMAND-LINE BUILD ENGINE
 # =====================================================================
-def intelligent_service_start(proj, voice, ear):
+def intelligent_service_start(proj, voice, ear, instances=None):
     """Starts a project with validation, dependency install, and optional build preparation."""
     pm2_name = proj["name"]
     path = proj["path"]
@@ -857,6 +857,18 @@ def intelligent_service_start(proj, voice, ear):
         proj = refreshed
         path = proj["path"]
 
+    if instances is not None:
+        error = ''
+        if isinstance(instances, bool) or not isinstance(instances, int) or instances < 1:
+            error = 'Cluster instances must be a positive integer.'
+        elif "custom_start" in proj or str(_runtime_profile(proj).get("project_type") or "custom").lower() != "node":
+            error = 'Cluster instances require a Node.js runtime entry, not a custom start command.'
+        if error:
+            update_runtime_state(pm2_name, {"last_error_stage": "start", "last_error": error, "last_error_at": int(time.time())})
+            broadcast(voice, error, color="text-red-400", speak=False)
+            return False
+
+    instance_args = f' --instances {instances}' if instances is not None else ''
     broadcast(voice, f"Starting {proj['friendly_name']}...", speak=False)
 
     if not _prepare_project_runtime(proj, voice):
@@ -915,7 +927,7 @@ def intelligent_service_start(proj, voice, ear):
     entry_on_disk = os.path.join(path, runtime_entry) if runtime_entry else ""
 
     if runtime_entry and os.path.exists(entry_on_disk):
-        start_command = f'"{PM2_EXECUTABLE}" start "{runtime_entry}" --name "{pm2_name}" --update-env'
+        start_command = f'"{PM2_EXECUTABLE}" start "{runtime_entry}" --name "{pm2_name}" --update-env{instance_args}'
         ok, start_message = _start_pm2_entry(pm2_name, path, start_command, extra_env=project_env)
         if not ok:
             ok, retry_message = _retry_install_then_start(start_command, start_message)
@@ -931,7 +943,7 @@ def intelligent_service_start(proj, voice, ear):
 
     fallback_entry = os.path.join(path, "dist", "main.js")
     if os.path.exists(fallback_entry):
-        start_command = f'"{PM2_EXECUTABLE}" start dist/main.js --name "{pm2_name}" --update-env'
+        start_command = f'"{PM2_EXECUTABLE}" start dist/main.js --name "{pm2_name}" --update-env{instance_args}'
         ok, start_message = _start_pm2_entry(pm2_name, path, start_command, extra_env=project_env)
         if not ok:
             ok, retry_message = _retry_install_then_start(start_command, start_message)
@@ -958,6 +970,12 @@ def intelligent_service_start(proj, voice, ear):
 # =====================================================================
 def process_command(raw_command, voice, ear=None, tenant_id=None):
     global active_conversation_queue
+    from assistant.services.pm2_manager import parse_start_instances
+
+    try:
+        raw_command, instances = parse_start_instances(raw_command)
+    except ValueError as error:
+        return {"type": "start_result", "target": "", "ok": False, "message": str(error)}
     raw_command_stripped = raw_command.strip()
     command = raw_command_stripped.lower()
     
@@ -1032,7 +1050,7 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
     elif "start all" in command or "boot all" in command or "start all services" in command:
         broadcast(voice, "Initializing all project-specific background services.", color="text-emerald-400", speak=True)
         for proj in command_projects:
-            intelligent_service_start(proj, voice, ear)
+            intelligent_service_start(proj, voice, ear, instances=instances)
         return
         
     elif "stop all" in command or "shutdown services" in command or "stop all services" in command:
@@ -1143,7 +1161,7 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
             
             if action_intent == "start":
                 if matched_proj:
-                    started = intelligent_service_start(matched_proj, voice, ear)
+                    started = intelligent_service_start(matched_proj, voice, ear, instances=instances)
                     if started:
                         return {
                             "type": "start_result",
@@ -1163,7 +1181,8 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
                         "message": error_text,
                     }
                 else:
-                    proc = subprocess.run(f'"{PM2_EXECUTABLE}" start {target}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    instance_args = f' --instances {instances}' if instances is not None else ''
+                    proc = subprocess.run(f'"{PM2_EXECUTABLE}" start {target}{instance_args}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     return {
                         "type": "start_result",
                         "target": target,

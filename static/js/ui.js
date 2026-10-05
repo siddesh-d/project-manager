@@ -715,9 +715,44 @@ window.moveProjectToCore = function (name) {
 };
 
 window.runProject = function (name) {
-  window.logToTerminal('UI_OVERRIDE', `Initiating START sequence for project ${name}`, 'text-emerald-400 font-bold');
-  window.AppState.socket?.emit('ui_command', { command: `start ${name}` });
-  window.toggleProjectsModal();
+  window.openStartServiceModal(name, true);
+};
+
+window.openStartServiceModal = function (name, fromProjects = false) {
+  window.AppState.startServiceTarget = name;
+  window.AppState.startFromProjects = fromProjects;
+  window.AppState.startServiceTrigger = document.activeElement;
+  document.getElementById('start-service-target').textContent = name;
+  document.getElementById('start-service-cluster').checked = false;
+  const input = document.getElementById('start-service-instances');
+  input.value = '1';
+  input.disabled = true;
+  document.getElementById('start-service-modal').classList.remove('hidden');
+  document.getElementById('start-service-cluster').focus();
+};
+
+window.closeStartServiceModal = function () {
+  document.getElementById('start-service-modal').classList.add('hidden');
+  window.AppState.startServiceTarget = null;
+  window.AppState.startServiceTrigger?.focus();
+};
+
+window.confirmStartService = function (event) {
+  event.preventDefault();
+  const name = window.AppState.startServiceTarget;
+  if (!name) return;
+  const cluster = document.getElementById('start-service-cluster').checked;
+  const input = document.getElementById('start-service-instances');
+  const instances = Number(input.value);
+  input.setCustomValidity(cluster && (!Number.isSafeInteger(instances) || instances < 1)
+    ? 'Enter a positive integer.' : '');
+  if (cluster && !input.reportValidity()) return;
+  const instanceArgs = cluster ? ` --instances ${instances}` : '';
+  window.logToTerminal('UI_OVERRIDE', `Initiating START sequence for ${name}${instanceArgs}`, 'text-emerald-400 font-bold');
+  window.AppState.socket?.emit('ui_command', { command: `start ${name}${instanceArgs}` });
+  const fromProjects = window.AppState.startFromProjects;
+  window.closeStartServiceModal();
+  if (fromProjects) window.toggleProjectsModal();
 };
 
 window.removeProjectFromRegistry = function (name) {
@@ -1479,7 +1514,9 @@ window.setCircleData = function (elementId, textId, value, max, formatStr, color
 
 // --- ACTION BUTTON ROUTERS ---
 window.serviceAction = function (action, serviceName) {
-  if (action === 'log') {
+  if (action === 'start') {
+    window.openStartServiceModal(serviceName);
+  } else if (action === 'log') {
     window.toggleLogs(serviceName);
   } else if (action === 'flush') {
     window.logToTerminal('UI_OVERRIDE', `Clearing PM2 logs for ${serviceName}`, 'text-zinc-400 font-bold');
