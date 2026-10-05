@@ -480,7 +480,7 @@ def _human_duration_to_seconds(raw_value):
     return total
 
 
-def _format_pm2_uptime(value):
+def _format_pm2_uptime(value, *, timestamp_ms=False):
     if value in (None, '', 0):
         return '0s'
 
@@ -523,11 +523,8 @@ def _format_pm2_uptime(value):
     if numeric_value <= 0:
         return '0s'
 
-    if numeric_value > 1_000_000_000_000:
-        numeric_value = max(0.0, time.time() * 1000 - numeric_value)
-
-    if numeric_value >= 1_000_000:
-        total_seconds = numeric_value / 1000.0
+    if timestamp_ms or numeric_value > 1_000_000_000_000:
+        total_seconds = max(0.0, time.time() * 1000 - numeric_value) / 1000.0
     else:
         total_seconds = numeric_value
 
@@ -608,7 +605,8 @@ def _build_pm2_service_payload(proc, port='N/A', project_path=None):
         payload['path'] = project_path
 
     field_map = {
-        'uptime': _format_pm2_uptime(pm2_env.get('pm_uptime') or pm2_env.get('uptime') or 0),
+        'uptime': _format_pm2_uptime(pm2_env['pm_uptime'], timestamp_ms=True)
+        if 'pm_uptime' in pm2_env else _format_pm2_uptime(pm2_env.get('uptime') or 0),
         'restarts': int(pm2_env.get('restart_time') or pm2_env.get('restarts') or 0),
         'user': pm2_env.get('user') or proc.get('user') or 'N/A',
         'watching': bool(pm2_env.get('watch') or pm2_env.get('watching') or False),
