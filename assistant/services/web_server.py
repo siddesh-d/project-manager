@@ -332,7 +332,7 @@ def _filter_pm2_services_for_user(services, user=None):
     return filtered
 
 
-def _run_bulk_project_action_for_user(user, action, command_callback):
+def _run_bulk_project_action_for_user(user, action, command_callback, instances=None):
     if not _user_can_manage_projects(user):
         return {'ok': False, 'error': 'Permission denied.', 'results': []}
     if not callable(command_callback):
@@ -344,7 +344,8 @@ def _run_bulk_project_action_for_user(user, action, command_callback):
         project_name = str(project.get('name') or '').strip()
         if not project_name:
             continue
-        callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}', user)
+        instance_args = f' --instances {instances}' if instances is not None else ''
+        callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}{instance_args}', user)
         results.append({
             'name': project_name,
             'ok': not isinstance(callback_result, dict) or bool(callback_result.get('ok', True)),
@@ -368,6 +369,12 @@ def _invoke_command_callback(command_callback, command_text, user):
 
 
 def _authorize_tenant_ui_command(user, command_text, command_callback):
+    from assistant.services.pm2_manager import parse_start_instances
+
+    try:
+        command_text, instances = parse_start_instances(command_text)
+    except ValueError as error:
+        return {'ok': False, 'error': str(error)}
     normalized = ' '.join(str(command_text or '').strip().split())
     parts = normalized.split(' ', 1)
     if len(parts) != 2:
@@ -382,7 +389,7 @@ def _authorize_tenant_ui_command(user, command_text, command_callback):
     if target.lower() in {'all', 'all services'}:
         if action == 'log':
             return {'ok': False, 'error': 'Bulk log access is not allowed.'}
-        return _run_bulk_project_action_for_user(user, action, command_callback)
+        return _run_bulk_project_action_for_user(user, action, command_callback, instances=instances)
 
     project = _get_project_for_user(target, user, require_manage=True)
     if not project:
@@ -392,7 +399,8 @@ def _authorize_tenant_ui_command(user, command_text, command_callback):
         return {'ok': True, 'log_target': project_name, 'results': []}
     if not callable(command_callback):
         return {'ok': False, 'error': 'Command processor is unavailable.'}
-    callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}', user)
+    instance_args = f' --instances {instances}' if instances is not None else ''
+    callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}{instance_args}', user)
     return {'ok': not isinstance(callback_result, dict) or bool(callback_result.get('ok', True)), 'results': [{'name': project_name, 'result': callback_result}]}
 
 
@@ -560,6 +568,28 @@ def _get_effective_core_project_path_for_user(user=None):
     return tenant_path or ''
 
 
+def _group_pm2_processes(processes):
+    grouped = {}
+    for proc in processes:
+        name = proc.get('name')
+        if name:
+            grouped.setdefault(name, []).append(proc)
+
+    services = {}
+    for name, workers in grouped.items():
+        online_workers = [worker for worker in workers if (worker.get('pm2_env') or {}).get('status') == 'online']
+        representative = (online_workers or workers)[0]
+        service = dict(representative)
+        service['instances'] = len(workers)
+        service['online_instances'] = len(online_workers)
+        service['monit'] = {
+            'cpu': sum(float((worker.get('monit') or {}).get('cpu') or 0) for worker in workers),
+            'memory': sum(int((worker.get('monit') or {}).get('memory') or 0) for worker in workers),
+        }
+        services[name] = service
+    return services
+
+
 def _build_pm2_service_payload(proc, port='N/A', project_path=None):
     pm2_env = proc.get('pm2_env') or {}
     monit = proc.get('monit') or {}
@@ -571,6 +601,8 @@ def _build_pm2_service_payload(proc, port='N/A', project_path=None):
         'cpu': float(monit.get('cpu', 0) or 0),
         'memory': f"{int(mem_bytes / (1024 * 1024))}MB",
         'port': port,
+        'instances': proc.get('instances', 1),
+        'online_instances': proc.get('online_instances', int(pm2_env.get('status') == 'online')),
     }
     if project_path:
         payload['path'] = project_path
@@ -582,7 +614,7 @@ def _build_pm2_service_payload(proc, port='N/A', project_path=None):
         'watching': bool(pm2_env.get('watch') or pm2_env.get('watching') or False),
         'pid': proc.get('pid') or pm2_env.get('pid') or 'N/A',
         'namespace': pm2_env.get('namespace') or proc.get('namespace') or 'default',
-        'mode': pm2_env.get('mode') or proc.get('mode') or 'fork',
+        'mode': pm2_env.get('exec_mode') or pm2_env.get('mode') or proc.get('mode') or 'fork',
         'version': pm2_env.get('version') or proc.get('version') or 'N/A',
     }
 
@@ -1723,7 +1755,7 @@ def pm2_telemetry_loop():
                 
             # Create a rapid lookup map of current active processes in PM2
             if parsed_live_snapshot:
-                pm2_status_map = {p.get("name"): p for p in processes if p.get("name")}
+                pm2_status_map = _group_pm2_processes(processes)
                 _last_pm2_status_map = dict(pm2_status_map)
                 running_now = {
                     p.get("name") for p in processes
@@ -1761,10 +1793,12 @@ def pm2_telemetry_loop():
                         'memory': '0MB',
                         'port': port,
                         'path': proj.get('path', ''),
+                        'instances': 0 if parsed_live_snapshot else None,
+                        'online_instances': 0 if parsed_live_snapshot else None,
                     })
             
             # 2. CAPTURE DYNAMIC AD-HOC AMRs (Dynamic Virtual Services)
-            for p in processes:
+            for p in pm2_status_map.values():
                 name = p.get("name", "")
                 if name.startswith("amr-service-") and str(name).strip().lower() not in project_name_set_ci:
                     payload.append(_build_pm2_service_payload(p, 'N/A'))

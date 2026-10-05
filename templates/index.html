@@ -720,6 +720,30 @@
     </div>
   </div>
 
+  <div id="start-service-modal" role="dialog" aria-modal="true" aria-labelledby="start-service-heading"
+    onkeydown="if (event.key === 'Escape') closeStartServiceModal()"
+    class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <form onsubmit="confirmStartService(event)"
+      class="hud-panel p-6 max-w-md w-full border-cyan-900/80 bg-[#020617] mx-4">
+      <h3 id="start-service-heading" class="text-cyan-400 font-bold text-sm mb-4">START SERVICE</h3>
+      <div id="start-service-target" class="text-cyan-100 text-xs break-all mb-5"></div>
+      <label class="flex items-center gap-3 text-cyan-300 text-xs mb-4">
+        <input id="start-service-cluster" type="checkbox"
+          onchange="document.getElementById('start-service-instances').disabled = !this.checked">
+        CLUSTER MODE
+      </label>
+      <label for="start-service-instances" class="block text-cyan-300 text-xs mb-2">INSTANCES</label>
+      <input id="start-service-instances" type="number" min="1" step="1" value="1" required disabled
+        oninput="this.setCustomValidity('')"
+        class="w-full bg-black border border-cyan-800 text-cyan-100 p-2 mb-6 disabled:opacity-40">
+      <div class="flex justify-end gap-3">
+        <button type="button" onclick="closeStartServiceModal()"
+          class="btn-ui btn-ui-cyan px-5 py-2 text-[10px] font-bold">CANCEL</button>
+        <button type="submit" class="btn-ui btn-ui-emerald px-5 py-2 text-[10px] font-bold">START</button>
+      </div>
+    </form>
+  </div>
+
   <div id="remove-modal"
     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
     <div class="hud-panel p-6 max-w-md w-full border-red-900/80 bg-[#020617] mx-4">

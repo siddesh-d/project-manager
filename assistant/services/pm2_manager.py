@@ -15,6 +15,17 @@ _cached_host_metrics = None
 _host_metrics_lock = threading.Lock()
 
 
+def parse_start_instances(command):
+    parts = str(command or '').strip().split()
+    if not parts or parts[0].lower() not in {'start', 'boot'} or '--instances' not in parts:
+        return command, None
+    if len(parts) < 4 or parts[-2] != '--instances' or parts.count('--instances') != 1:
+        raise ValueError('Use start <service> --instances <positive integer>.')
+    if not re.fullmatch(r'[0-9]+', parts[-1]) or int(parts[-1]) < 1:
+        raise ValueError('Cluster instances must be a positive integer.')
+    return ' '.join(parts[:-2]), int(parts[-1])
+
+
 def _fallback_host_metrics():
     if os.name == "nt":
         class FILETIME(ctypes.Structure):

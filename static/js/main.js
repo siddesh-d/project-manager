@@ -59,6 +59,7 @@ function getCoreStructureSignature(services) {
 }
 
 const PM2_FIELD_DEFS = {
+  online_instances: { label: 'INSTANCES', format: (value, service) => `${value} / ${service.instances} ONLINE` },
   uptime: { label: 'UPTIME' },
   restarts: { label: '↺' },
   user: { label: 'USER' },
@@ -75,7 +76,7 @@ function buildPm2MetadataRows(service, colorBase) {
   const rows = Object.entries(PM2_FIELD_DEFS)
     .filter(([key]) => key in service && service[key] !== undefined && service[key] !== null && service[key] !== '')
     .map(([key, def]) => {
-      const value = def.format ? def.format(service[key]) : service[key];
+      const value = def.format ? def.format(service[key], service) : service[key];
       return `
         <div class="flex justify-between gap-2 text-[8px] text-${colorBase}-600" data-role="pm2-field" data-field="${key}">
           <span>${def.label}</span>
