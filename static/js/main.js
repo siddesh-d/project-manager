@@ -298,11 +298,12 @@ socket.on('pm2_telemetry', (data) => {
       : `bg-black hover:bg-${colorBase}-900/50 text-${colorBase}-600 border-${colorBase}-900 hover:border-${colorBase}-500`;
 
     const canMutateServices = window.userMayMutateServices();
-    const moreItemsHTML = canMutateServices
+    let moreItemsHTML = canMutateServices
       ? (isOnline
         ? `<button onclick="promptStopService('${srv.name}')" class="btn-ui btn-ui-amber text-left text-[9px] py-1 px-2">STOP</button><button onclick="serviceAction('flush', '${srv.name}')" class="btn-ui btn-ui-zinc text-left text-[9px] py-1 px-2">CLEAR LOGS</button><button onclick="promptRemoveService('${srv.name}')" class="btn-ui btn-ui-red text-left text-[9px] py-1 px-2">REMOVE</button>`
         : `<button onclick="serviceAction('flush', '${srv.name}')" class="btn-ui btn-ui-zinc text-left text-[9px] py-1 px-2">CLEAR LOGS</button><button onclick="promptRemoveService('${srv.name}')" class="btn-ui btn-ui-red text-left text-[9px] py-1 px-2">REMOVE</button>`)
       : `<button onclick="serviceAction('flush', '${srv.name}')" class="btn-ui btn-ui-zinc text-left text-[9px] py-1 px-2">VIEW LOGS</button>`;
+    moreItemsHTML += '<button data-role="download-logs" class="btn-ui btn-ui-cyan text-left text-[9px] py-1 px-2">DOWNLOAD LOGS</button>';
 
     const moreMenuHTML = `<details class="group relative" data-more-menu data-service-name="${srv.name}"><summary class="btn-ui btn-ui-zinc list-none select-none p-1" title="More Actions"><svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg></summary><div class="absolute right-0 mt-1 min-w-[132px] z-20 bg-black border border-cyan-900/60 shadow-[0_8px_24px_rgba(0,0,0,0.45)] p-1 flex flex-col gap-1">${moreItemsHTML}</div></details>`;
 
@@ -346,6 +347,11 @@ socket.on('pm2_telemetry', (data) => {
     servicePath.textContent = srv.path || '';
     servicePath.title = srv.path || '';
     servicePath.hidden = !srv.path;
+
+    card.querySelector('[data-role="download-logs"]')?.addEventListener('click', () => {
+      card.querySelector('details[data-more-menu]')?.removeAttribute('open');
+      window.openLogFiles(srv.name);
+    });
 
     if (isAMR) amrContainer.appendChild(card);
     else coreCardsElements.push(card);
