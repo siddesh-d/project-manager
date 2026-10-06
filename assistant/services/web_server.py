@@ -7,8 +7,9 @@ import subprocess
 import threading
 import tempfile
 import shutil
+import hashlib
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, session, has_request_context
+from flask import Flask, render_template, request, jsonify, session, has_request_context, send_file
 from flask_socketio import SocketIO, disconnect
 
 from assistant.auth import (
@@ -1034,6 +1035,69 @@ def register_tenant():
         return jsonify({'ok': False, 'error': str(exc)}), 400
 
     return jsonify({'ok': True, 'tenant': result})
+
+
+def _get_pm2_log_files(service_name):
+    result = subprocess.run(
+        [PM2_EXECUTABLE, 'jlist'], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        encoding='utf-8', errors='replace', timeout=10,
+    )
+    if result.returncode != 0:
+        raise RuntimeError('Unable to query PM2 log files.')
+    processes = None
+    for line in reversed(result.stdout.strip().splitlines()):
+        try:
+            candidate = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(candidate, list):
+            processes = candidate
+            break
+    if processes is None:
+        raise RuntimeError('Unable to read the PM2 process registry.')
+
+    files = []
+    for proc in processes:
+        if str(proc.get('name') or '').lower() != service_name.lower():
+            continue
+        env = proc.get('pm2_env') or {}
+        instance = proc.get('pm_id', env.get('pm_id'))
+        for kind, field in [('output', 'pm_out_log_path'), ('error', 'pm_err_log_path'), ('combined', 'pm_log_path')]:
+            path = env.get(field)
+            if not path or not os.path.isfile(path):
+                continue
+            path = os.path.abspath(path)
+            file_id = hashlib.sha256(f'{instance}:{kind}:{path}'.encode('utf-8')).hexdigest()
+            files.append({'id': file_id, 'instance': instance, 'type': kind,
+                          'name': os.path.basename(path), 'size': os.path.getsize(path), 'path': path})
+    return files
+
+
+@app.route('/api/services/<service_name>/logs', methods=['GET'])
+def service_log_files(service_name):
+    user = _get_authenticated_user()
+    if not user:
+        return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
+    if not _user_is_platform_admin(user) and not _get_project_for_user(service_name, user):
+        return jsonify({'ok': False, 'error': 'Service not found or access denied.'}), 404
+    try:
+        files = _get_pm2_log_files(service_name)
+    except (OSError, subprocess.SubprocessError, RuntimeError):
+        return jsonify({'ok': False, 'error': 'Unable to load PM2 log files.'}), 503
+
+    file_id = request.args.get('file')
+    if file_id is not None:
+        selected = next((entry for entry in files if entry['id'] == file_id), None)
+        if selected is None:
+            return jsonify({'ok': False, 'error': 'Log file not found. Refresh the file list.'}), 404
+        try:
+            return send_file(selected['path'], as_attachment=True, download_name=selected['name'],
+                             mimetype='text/plain', conditional=False, max_age=0)
+        except OSError:
+            return jsonify({'ok': False, 'error': 'Log file is no longer available.'}), 404
+    return jsonify({'ok': True, 'files': [
+        {key: value for key, value in entry.items() if key != 'path'} for entry in files
+    ]})
 
 
 @app.route('/api/projects/<project_name>/files', methods=['GET'])
