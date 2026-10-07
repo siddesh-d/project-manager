@@ -370,9 +370,10 @@ def _invoke_command_callback(command_callback, command_text, user):
 
 
 def _authorize_tenant_ui_command(user, command_text, command_callback):
-    from assistant.services.pm2_manager import parse_start_instances
+    from assistant.services.pm2_manager import parse_delete_logs, parse_start_instances
 
     try:
+        command_text, delete_logs = parse_delete_logs(command_text)
         command_text, instances = parse_start_instances(command_text)
     except ValueError as error:
         return {'ok': False, 'error': str(error)}
@@ -388,6 +389,8 @@ def _authorize_tenant_ui_command(user, command_text, command_callback):
         return {'ok': False, 'error': 'Command is not available to tenant users.'}
 
     if target.lower() in {'all', 'all services'}:
+        if delete_logs:
+            return {'ok': False, 'error': 'Log deletion must target one service at a time.'}
         if action == 'log':
             return {'ok': False, 'error': 'Bulk log access is not allowed.'}
         return _run_bulk_project_action_for_user(user, action, command_callback, instances=instances)
@@ -398,10 +401,13 @@ def _authorize_tenant_ui_command(user, command_text, command_callback):
     project_name = str(project.get('name') or '').strip()
     if action == 'log':
         return {'ok': True, 'log_target': project_name, 'results': []}
+    if delete_logs and action != 'delete':
+        return {'ok': False, 'error': 'Log deletion is only available when deleting a service.'}
     if not callable(command_callback):
         return {'ok': False, 'error': 'Command processor is unavailable.'}
     instance_args = f' --instances {instances}' if instances is not None else ''
-    callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}{instance_args}', user)
+    delete_log_args = ' --delete-logs' if delete_logs else ''
+    callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}{instance_args}{delete_log_args}', user)
     return {'ok': not isinstance(callback_result, dict) or bool(callback_result.get('ok', True)), 'results': [{'name': project_name, 'result': callback_result}]}
 
 

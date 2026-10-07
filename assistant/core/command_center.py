@@ -965,14 +965,68 @@ def intelligent_service_start(proj, voice, ear, instances=None):
     broadcast(voice, f"Cannot start {proj['friendly_name']}: runtime entry is missing.", color="text-red-400", speak=True)
     return False
 
+
+def _delete_pm2_service(pm2_name, delete_logs=False):
+    log_paths = set()
+    if delete_logs:
+        env = os.environ.copy()
+        env['NODE_NO_WARNINGS'] = '1'
+        try:
+            result = subprocess.run(
+                [PM2_EXECUTABLE, 'jlist'], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, env=env, timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return False, 'Unable to read PM2 log paths; service was not removed.'
+        processes = None
+        if result.returncode == 0:
+            for line in reversed(result.stdout.strip().splitlines()):
+                try:
+                    candidate = json.loads(line)
+                except ValueError:
+                    continue
+                if isinstance(candidate, list):
+                    processes = candidate
+                    break
+        if processes is None:
+            return False, 'Unable to read PM2 log paths; service was not removed.'
+        for proc in processes:
+            if str(proc.get('name') or '').lower() != str(pm2_name).lower():
+                continue
+            pm2_env = proc.get('pm2_env') or {}
+            for field in ('pm_out_log_path', 'pm_err_log_path', 'pm_log_path'):
+                path = pm2_env.get(field)
+                if path and os.path.isabs(path):
+                    log_paths.add(os.path.abspath(path))
+
+    try:
+        command = subprocess.list2cmdline([PM2_EXECUTABLE, 'delete', pm2_name])
+        result = subprocess.run(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError:
+        return False, 'Unable to execute PM2 delete.'
+    if result.returncode != 0:
+        return False, 'PM2 could not remove the service; its logs were kept.'
+
+    failed_paths = []
+    for path in log_paths:
+        try:
+            if os.path.isfile(path):
+                os.unlink(path)
+        except OSError:
+            failed_paths.append(path)
+    if failed_paths:
+        return True, f'Service removed, but {len(failed_paths)} log file(s) could not be deleted.'
+    return True, 'Service removed and selected log files deleted.' if delete_logs else 'Service removed; log files were kept.'
+
 # =====================================================================
 # DECOUPLED CONVERSATIONAL COMMAND PROCESSOR
 # =====================================================================
 def process_command(raw_command, voice, ear=None, tenant_id=None):
     global active_conversation_queue
-    from assistant.services.pm2_manager import parse_start_instances
+    from assistant.services.pm2_manager import parse_delete_logs, parse_start_instances
 
     try:
+        raw_command, delete_logs = parse_delete_logs(raw_command)
         raw_command, instances = parse_start_instances(raw_command)
     except ValueError as error:
         return {"type": "start_result", "target": "", "ok": False, "message": str(error)}
@@ -984,6 +1038,10 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
         return
 
     raw_parts = raw_command.strip().split()
+    if delete_logs and (len(raw_parts) != 2 or raw_parts[0].lower() not in {'delete', 'remove'}
+                        or raw_parts[1].lower() in {'all', 'all services'}):
+        return {"type": "command_result", "target": "", "ok": False,
+                "message": "Log deletion must target one PM2 service at a time."}
     command_projects = [
         project for project in get_projects()
         if tenant_id is None or str(project.get('tenant_id') or '').strip() == str(tenant_id).strip()
@@ -1191,7 +1249,11 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
                     }
             else:
                 broadcast(voice, f"Executing {action_intent.upper()} directive for {target}", color="text-emerald-400 font-bold", speak=True)
-                subprocess.run(f'"{PM2_EXECUTABLE}" {action_intent} {target}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if action_intent == 'delete':
+                    deleted, message = _delete_pm2_service(target, delete_logs=delete_logs)
+                    broadcast(voice, message, color="text-emerald-400" if deleted else "text-red-400", speak=False)
+                else:
+                    subprocess.run(f'"{PM2_EXECUTABLE}" {action_intent} {target}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
         else:
             response = ask_question(voice, ear, f"Which service would you like to {action_intent}?")
