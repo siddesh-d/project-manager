@@ -108,6 +108,8 @@ document.addEventListener('keydown', event => {
 // 1. REMOVE MODAL
 window.promptRemoveService = function (serviceName) {
   window.AppState.serviceToRemove = serviceName;
+  const deleteLogs = document.getElementById('remove-delete-logs');
+  if (deleteLogs) deleteLogs.checked = false;
   const target = document.getElementById('remove-target-name');
   if (target) target.textContent = serviceName;
   document.getElementById('remove-modal')?.classList.remove('hidden');
@@ -115,13 +117,17 @@ window.promptRemoveService = function (serviceName) {
 
 window.closeRemoveModal = function () {
   window.AppState.serviceToRemove = null;
+  const deleteLogs = document.getElementById('remove-delete-logs');
+  if (deleteLogs) deleteLogs.checked = false;
   document.getElementById('remove-modal')?.classList.add('hidden');
 };
 
 window.confirmRemoveService = function () {
   if (window.AppState.serviceToRemove && window.AppState.socket) {
     window.logToTerminal('UI_OVERRIDE', `Initiating REMOVE sequence for ${window.AppState.serviceToRemove}`, 'text-red-500 font-bold');
-    window.AppState.socket.emit('ui_command', { command: `delete ${window.AppState.serviceToRemove}` });
+    const deleteLogs = document.getElementById('remove-delete-logs')?.checked;
+    const deleteLogOption = deleteLogs ? ' --delete-logs' : '';
+    window.AppState.socket.emit('ui_command', { command: `delete ${window.AppState.serviceToRemove}${deleteLogOption}` });
     window.closeRemoveModal();
   }
 };

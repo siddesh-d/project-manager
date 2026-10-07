@@ -26,6 +26,15 @@ def parse_start_instances(command):
     return ' '.join(parts[:-2]), int(parts[-1])
 
 
+def parse_delete_logs(command):
+    parts = str(command or '').strip().split()
+    if '--delete-logs' not in parts:
+        return command, False
+    if len(parts) != 3 or parts[0].lower() not in {'delete', 'remove'} or parts[-1] != '--delete-logs':
+        raise ValueError('Use delete <service> --delete-logs to remove stored logs.')
+    return ' '.join(parts[:-1]), True
+
+
 def _fallback_host_metrics():
     if os.name == "nt":
         class FILETIME(ctypes.Structure):
