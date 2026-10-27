@@ -55,6 +55,7 @@ from assistant.config import (
 )
 from assistant.registry import projects
 from assistant.services import pm2_manager
+from assistant.services import project_file_ops
 
 app = Flask(
     __name__,
@@ -1156,6 +1157,78 @@ def list_project_files(project_name):
         return jsonify({'ok': False, 'error': f'Unable to list files: {exc}'}), 500
 
 
+@app.route('/api/projects/<project_name>/files', methods=['POST'])
+def upload_project_files(project_name):
+    user = _get_authenticated_user()
+    if not user:
+        return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
+    if not _user_can_manage_projects(user):
+        return jsonify({'ok': False, 'error': 'Project management permission required.'}), 403
+
+    project = _get_project_for_user(project_name, user, require_manage=True)
+    if not project:
+        return jsonify({'ok': False, 'error': 'Project not found or access denied.'}), 404
+
+    uploaded_files = request.files.getlist('project_files')
+    if not uploaded_files:
+        return jsonify({'ok': False, 'error': 'Select at least one file to upload.'}), 400
+
+    upload_path = request.form.get('path', '')
+    try:
+        _, target_dir, _ = _resolve_project_file_path(
+            project, upload_path, allow_directory=True
+        )
+        destinations = []
+        seen_destinations = set()
+        for uploaded_file in uploaded_files:
+            filename = str(uploaded_file.filename or '').strip()
+            if not filename or filename in {'.', '..'} or '/' in filename or '\\' in filename or '\x00' in filename:
+                return jsonify({'ok': False, 'error': 'Uploaded files must have a valid file name.'}), 400
+
+            relative_path = '/'.join(part for part in [upload_path.strip('/\\'), filename] if part)
+            _, target_file, rel = _resolve_project_file_path(
+                project, relative_path, allow_directory=False, allow_missing=True
+            )
+            normalized_target = os.path.normcase(target_file)
+            if normalized_target in seen_destinations:
+                return jsonify({'ok': False, 'error': 'The upload contains duplicate file names.'}), 400
+            seen_destinations.add(normalized_target)
+            if os.path.exists(target_file):
+                return jsonify({'ok': False, 'error': f'A file already exists at {rel}.'}), 409
+            destinations.append((uploaded_file, target_file, rel))
+
+        temporary_files = []
+        try:
+            for uploaded_file, target_file, _ in destinations:
+                if os.path.dirname(target_file) != target_dir and not os.path.isdir(os.path.dirname(target_file)):
+                    return jsonify({'ok': False, 'error': 'Upload folder is not accessible.'}), 400
+                handle = tempfile.NamedTemporaryFile(
+                    dir=os.path.dirname(target_file), prefix='.upload_', suffix='.tmp', delete=False
+                )
+                handle.close()
+                temporary_files.append((handle.name, target_file))
+                uploaded_file.save(handle.name)
+
+            for temporary_file, target_file in temporary_files:
+                if os.path.exists(target_file):
+                    return jsonify({'ok': False, 'error': 'A file already exists at the upload destination.'}), 409
+                os.replace(temporary_file, target_file)
+        finally:
+            for temporary_file, _ in temporary_files:
+                if os.path.exists(temporary_file):
+                    os.remove(temporary_file)
+
+        return jsonify({
+            'ok': True,
+            'project': project.get('name'),
+            'files': [rel for _, _, rel in destinations],
+        }), 201
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    except OSError as exc:
+        return jsonify({'ok': False, 'error': f'Unable to upload files: {exc}'}), 500
+
+
 @app.route('/api/projects/<project_name>/file', methods=['GET'])
 def read_project_file(project_name):
     user = _get_authenticated_user()
@@ -1239,6 +1312,100 @@ def write_project_file(project_name):
         except OSError:
             pass
         return jsonify({'ok': False, 'error': f'Unable to save file: {exc}'}), 500
+
+
+@app.route('/api/projects/<project_name>/file', methods=['POST'])
+def create_project_file(project_name):
+    user = _get_authenticated_user()
+    if not user:
+        return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
+    if not _user_can_manage_projects(user):
+        return jsonify({'ok': False, 'error': 'Project management permission required.'}), 403
+
+    project = _get_project_for_user(project_name, user, require_manage=True)
+    if not project:
+        return jsonify({'ok': False, 'error': 'Project not found or access denied.'}), 404
+
+    payload = request.get_json(silent=True) or {}
+    relative_path = payload.get('path')
+    if relative_path is None:
+        return jsonify({'ok': False, 'error': 'File path is required.'}), 400
+    try:
+        _, target_file, rel = _resolve_project_file_path(
+            project, relative_path, allow_directory=False, allow_missing=True
+        )
+        if not rel:
+            return jsonify({'ok': False, 'error': 'A file name is required.'}), 400
+        if not os.path.isdir(os.path.dirname(target_file)):
+            return jsonify({'ok': False, 'error': 'Parent folder does not exist.'}), 400
+        project_file_ops.create_file(target_file, payload.get('content', ''))
+        return jsonify({'ok': True, 'project': project.get('name'), 'path': rel}), 201
+    except FileExistsError:
+        return jsonify({'ok': False, 'error': 'A file or folder already exists at this path.'}), 409
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    except OSError as exc:
+        return jsonify({'ok': False, 'error': f'Unable to create file: {exc}'}), 500
+
+
+@app.route('/api/projects/<project_name>/file', methods=['DELETE'])
+def delete_project_file(project_name):
+    user = _get_authenticated_user()
+    if not user:
+        return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
+    if not _user_can_manage_projects(user):
+        return jsonify({'ok': False, 'error': 'Project management permission required.'}), 403
+
+    project = _get_project_for_user(project_name, user, require_manage=True)
+    if not project:
+        return jsonify({'ok': False, 'error': 'Project not found or access denied.'}), 404
+
+    relative_path = request.args.get('path', '')
+    try:
+        _, target_file, rel = _resolve_project_file_path(project, relative_path, allow_directory=False)
+        if not rel:
+            return jsonify({'ok': False, 'error': 'The project root cannot be deleted.'}), 400
+        project_file_ops.delete_file(target_file)
+        return jsonify({'ok': True, 'project': project.get('name'), 'path': rel})
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    except OSError as exc:
+        return jsonify({'ok': False, 'error': f'Unable to delete file: {exc}'}), 500
+
+
+@app.route('/api/projects/<project_name>/folder', methods=['POST', 'DELETE'])
+def manage_project_folder(project_name):
+    user = _get_authenticated_user()
+    if not user:
+        return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
+    if not _user_can_manage_projects(user):
+        return jsonify({'ok': False, 'error': 'Project management permission required.'}), 403
+
+    project = _get_project_for_user(project_name, user, require_manage=True)
+    if not project:
+        return jsonify({'ok': False, 'error': 'Project not found or access denied.'}), 404
+
+    payload = request.get_json(silent=True) or {} if request.method == 'POST' else {}
+    relative_path = payload.get('path') if request.method == 'POST' else request.args.get('path', '')
+    try:
+        project_root, target_folder, rel = _resolve_project_file_path(
+            project, relative_path, allow_directory=True, allow_missing=request.method == 'POST'
+        )
+        if not rel or (request.method == 'DELETE' and target_folder == project_root):
+            return jsonify({'ok': False, 'error': 'The project root cannot be changed or deleted.'}), 400
+        if request.method == 'POST':
+            if not os.path.isdir(os.path.dirname(target_folder)):
+                return jsonify({'ok': False, 'error': 'Parent folder does not exist.'}), 400
+            project_file_ops.create_folder(target_folder)
+            return jsonify({'ok': True, 'project': project.get('name'), 'path': rel}), 201
+        project_file_ops.delete_folder(target_folder)
+        return jsonify({'ok': True, 'project': project.get('name'), 'path': rel})
+    except FileExistsError:
+        return jsonify({'ok': False, 'error': 'A file or folder already exists at this path.'}), 409
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    except OSError as exc:
+        return jsonify({'ok': False, 'error': f'Unable to {"create" if request.method == "POST" else "delete"} folder: {exc}'}), 500
 
 
 def _safe_upload_destination(base_dir, relative_path):

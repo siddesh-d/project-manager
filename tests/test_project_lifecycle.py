@@ -1,3 +1,4 @@
+import io
 import json
 import os
 import tempfile
@@ -11,6 +12,28 @@ from assistant.services import web_server
 
 
 class TestProjectLifecycle(unittest.TestCase):
+    def test_project_file_upload_saves_files_in_current_folder(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project = {"name": "svc", "path": tmpdir, "tenant_id": "tenant-a"}
+            nested_dir = Path(tmpdir) / "config"
+            nested_dir.mkdir()
+            user = {"role": "tenant_admin", "tenant_id": "tenant-a"}
+            with web_server.app.test_request_context(
+                "/api/projects/svc/files",
+                method="POST",
+                data={
+                    "path": "config",
+                    "project_files": (io.BytesIO(b"setting=value"), "settings.env"),
+                },
+                content_type="multipart/form-data",
+            ), patch.object(web_server, "_get_authenticated_user", return_value=user), patch.object(
+                web_server, "_user_can_manage_projects", return_value=True
+            ), patch.object(web_server, "_get_project_for_user", return_value=project):
+                response, status = web_server.upload_project_files("svc")
+
+            self.assertEqual(status, 201)
+            self.assertEqual((nested_dir / "settings.env").read_bytes(), b"setting=value")
+
     def test_pm2_service_payload_includes_registry_project_path(self):
         payload = web_server._build_pm2_service_payload(
             {"name": "core-api", "pm2_env": {"status": "online"}, "monit": {}},
