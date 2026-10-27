@@ -12,6 +12,110 @@ from assistant.services import web_server
 
 
 class TestProjectLifecycle(unittest.TestCase):
+    def test_upload_of_prebuilt_vite_project_registers_with_build_free_defaults(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            projects_file = Path(tmpdir) / "projects.json"
+            core_dir = Path(tmpdir) / "core"
+            user = {"id": "u1", "role": "platform_admin"}
+            files = {
+                "react/package.json": json.dumps({"scripts": {
+                    "build": "tsc && vite build",
+                    "start:prod": "pm2 start ecosystem.config.js",
+                }}),
+                "react/build/index.html": "<html></html>",
+                "react/.env": "PORT=3100",
+            }
+            data = {
+                "name": "react",
+                "storage_mode": "core",
+                "destination_path": str(core_dir),
+                "project_files": [(io.BytesIO(body.encode()), rel) for rel, body in files.items()],
+            }
+
+            original = (projects.PROJECTS_FILE, projects._projects, projects._core_project_path)
+            try:
+                projects.PROJECTS_FILE = str(projects_file)
+                projects._projects = []
+                projects._core_project_path = str(core_dir)
+                with web_server.app.test_request_context(
+                    "/api/upload_project", method="POST", data=data, content_type="multipart/form-data"
+                ), patch.object(web_server, "_get_authenticated_user", return_value=user), patch.object(
+                    web_server, "_emit_projects_list"
+                ):
+                    response = web_server.upload_project_from_device()
+                added = projects.get_projects()[0]
+            finally:
+                projects.PROJECTS_FILE, projects._projects, projects._core_project_path = original
+
+        self.assertTrue(response.get_json()["ok"])
+        profile = added["deployment_profile"]
+        self.assertEqual(profile["runtime_entry"], "build/index.html")
+        self.assertFalse(profile["auto_install"])
+        self.assertFalse(profile["auto_build"])
+        self.assertEqual(added["custom_start"], "npm run start:prod")
+
+    def test_new_prebuilt_vite_project_uses_package_pm2_defaults(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            project_path = Path(tmpdir)
+            (project_path / "build").mkdir()
+            (project_path / "build" / "index.html").write_text("<html></html>", encoding="utf-8")
+            (project_path / "ecosystem.config.js").write_text("module.exports = {};", encoding="utf-8")
+            (project_path / "package.json").write_text(json.dumps({
+                "scripts": {
+                    "build": "cross-env NODE_ENV=production tsc && vite build",
+                    "start:prod": "pm2 start ecosystem.config.js --update-env",
+                },
+            }), encoding="utf-8")
+
+            original_projects_file = projects.PROJECTS_FILE
+            original_cache = projects._projects
+            original_core = projects._core_project_path
+            try:
+                projects.PROJECTS_FILE = str(project_path / "projects.json")
+                projects._projects = []
+                projects._core_project_path = ""
+                ok, error = projects.add_project("vite-app", "Vite App", tmpdir)
+                self.assertTrue(ok, error)
+                added = projects.get_projects()[0]
+            finally:
+                projects.PROJECTS_FILE = original_projects_file
+                projects._projects = original_cache
+                projects._core_project_path = original_core
+
+        profile = added["deployment_profile"]
+        self.assertEqual(profile["build_policy"], "never")
+        self.assertEqual(profile["runtime_entry"], "build/index.html")
+        self.assertFalse(profile["auto_install"])
+        self.assertFalse(profile["auto_build"])
+        self.assertEqual(added["custom_start"], "npm run start:prod")
+
+    def test_existing_node_profile_keeps_its_saved_defaults(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir)
+            (path / "build").mkdir()
+            (path / "build" / "index.html").write_text("<html></html>", encoding="utf-8")
+            (path / "ecosystem.config.js").write_text("module.exports = {};", encoding="utf-8")
+            (path / "package.json").write_text(json.dumps({
+                "scripts": {
+                    "build": "vite build",
+                    "start:prod": "pm2 start ecosystem.config.js",
+                },
+            }), encoding="utf-8")
+            saved_profile = {
+                "project_type": "node",
+                "build_policy": "if_missing",
+                "runtime_entry": "dist/main.js",
+                "auto_install": True,
+                "auto_build": True,
+            }
+
+            profile = projects._normalize_deployment_profile(saved_profile, tmpdir)
+
+        self.assertEqual(profile["build_policy"], "if_missing")
+        self.assertEqual(profile["runtime_entry"], "dist/main.js")
+        self.assertTrue(profile["auto_install"])
+        self.assertTrue(profile["auto_build"])
+
     def test_project_file_upload_saves_files_in_current_folder(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             project = {"name": "svc", "path": tmpdir, "tenant_id": "tenant-a"}

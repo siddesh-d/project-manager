@@ -76,7 +76,37 @@ def _detect_project_type(project_path):
     return "custom"
 
 
-def _default_deployment_profile(project_type):
+def _load_package_json(project_path):
+    package_file = Path(project_path) / "package.json"
+    try:
+        with package_file.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _prebuilt_vite_defaults(project_path):
+    """Defaults for a Vite app uploaded with its production build; None for any other project."""
+    scripts = _load_package_json(project_path).get("scripts")
+    if not isinstance(scripts, dict) or "vite build" not in str(scripts.get("build") or "").lower():
+        return None
+
+    for output_dir in ("build", "dist"):
+        if (Path(project_path) / output_dir / "index.html").is_file():
+            defaults = {
+                "build_policy": "never",
+                "runtime_entry": f"{output_dir}/index.html",
+                "auto_install": False,
+                "auto_build": False,
+            }
+            if str(scripts.get("start:prod") or "").strip():
+                defaults["custom_start"] = "npm run start:prod"
+            return defaults
+    return None
+
+
+def _default_deployment_profile(project_type, project_path=None):
     base = {
         "project_type": project_type,
         "include_paths": ["**"],
@@ -102,6 +132,9 @@ def _default_deployment_profile(project_type):
         base["install_command"] = "npm install"
         base["build_command"] = "npm run build"
         base["runtime_entry"] = "dist/main.js"
+        vite_defaults = _prebuilt_vite_defaults(project_path) if project_path else None
+        if vite_defaults:
+            base.update({key: value for key, value in vite_defaults.items() if key != "custom_start"})
     elif project_type == "python":
         base["exclude_paths"] = base["exclude_paths"] + [
             ".venv/**",
@@ -178,7 +211,8 @@ def _merge_deployment_profile(base, override):
 
 def _normalize_deployment_profile(profile, project_path):
     project_type = _detect_project_type(project_path)
-    base = _default_deployment_profile(project_type)
+    has_explicit_profile = isinstance(profile, dict) and bool(profile)
+    base = _default_deployment_profile(project_type, project_path if not has_explicit_profile else None)
 
     from_registry = profile if isinstance(profile, dict) else {}
     merged = _merge_deployment_profile(base, from_registry)
@@ -523,6 +557,7 @@ def add_project(name, friendly_name, path, custom_start=None, storage_mode="curr
             return False, "Tenant projects must be stored within the assigned tenant project path."
 
     deployment_profile = _normalize_deployment_profile({}, path)
+    vite_defaults = _prebuilt_vite_defaults(path) if not tenant_id else None
 
     with _lock:
         projects = get_projects()
@@ -552,6 +587,8 @@ def add_project(name, friendly_name, path, custom_start=None, storage_mode="curr
             entry["tenant_id"] = tenant_id
         if custom_start:
             entry["custom_start"] = custom_start
+        elif vite_defaults and vite_defaults.get("custom_start"):
+            entry["custom_start"] = vite_defaults["custom_start"]
         projects.append(entry)
         _write_projects(projects, get_core_project_path())
 
