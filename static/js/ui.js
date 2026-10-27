@@ -147,8 +147,7 @@ window.closeStopModal = function () {
 
 window.confirmStopService = function () {
   if (window.AppState.serviceToStop && window.AppState.socket) {
-    window.logToTerminal('UI_OVERRIDE', `Initiating STOP sequence for ${window.AppState.serviceToStop}`, 'text-amber-500 font-bold');
-    window.AppState.socket.emit('ui_command', { command: `stop ${window.AppState.serviceToStop}` });
+    window.runServiceOperation('stop', window.AppState.serviceToStop, `stop ${window.AppState.serviceToStop}`);
     window.closeStopModal();
   }
 };
@@ -826,8 +825,7 @@ window.confirmStartService = function (event) {
     ? 'Enter a positive integer.' : '');
   if (cluster && !input.reportValidity()) return;
   const instanceArgs = cluster ? ` --instances ${instances}` : '';
-  window.logToTerminal('UI_OVERRIDE', `Initiating START sequence for ${name}${instanceArgs}`, 'text-emerald-400 font-bold');
-  window.AppState.socket?.emit('ui_command', { command: `start ${name}${instanceArgs}` });
+  window.runServiceOperation('start', name, `start ${name}${instanceArgs}`);
   const fromProjects = window.AppState.startFromProjects;
   window.closeStartServiceModal();
   if (fromProjects) window.toggleProjectsModal();
@@ -1703,6 +1701,88 @@ window.setCircleData = function (elementId, textId, value, max, formatStr, color
   }
 };
 
+// --- SERVICE LIFECYCLE OPERATIONS (start / stop / restart) ---
+const OP_LABELS = {
+  start: { busy: 'Starting...', done: 'started' },
+  stop: { busy: 'Stopping...', done: 'stopped' },
+  restart: { busy: 'Restarting...', done: 'restarted' },
+};
+const OP_TIMEOUT_MS = 60000;
+window.AppState.pendingOps = window.AppState.pendingOps || {};
+const opFailures = {};
+
+window.getPendingOp = function (serviceName) {
+  return window.AppState.pendingOps[serviceName]?.action || null;
+};
+
+window.noteOpResult = function (serviceName, result) {
+  if (window.AppState.pendingOps[serviceName] && result && !result.ok) {
+    opFailures[serviceName] = (result.message || 'Operation failed.').toString();
+  }
+};
+
+// Reflects pending operations on the service cards: disables buttons and shows a status line.
+window.applyPendingOps = function () {
+  document.querySelectorAll('[data-core-card="1"]').forEach(card => {
+    const name = card.getAttribute('data-service-name');
+    const op = window.getPendingOp(name);
+    let line = card.querySelector('[data-role="op-status"]');
+    card.querySelectorAll('[data-svc-action]').forEach(btn => { btn.disabled = !!op; btn.classList.toggle('opacity-50', !!op); btn.classList.toggle('cursor-not-allowed', !!op); });
+    if (!op) { line?.remove(); return; }
+    if (!line) {
+      line = document.createElement('div');
+      line.setAttribute('data-role', 'op-status');
+      line.className = 'flex items-center gap-1.5 text-[9px] text-amber-400 uppercase tracking-widest mb-1';
+      line.setAttribute('role', 'status');
+      const anchor = card.querySelector('[data-role="service-path"]');
+      if (anchor) anchor.insertAdjacentElement('afterend', line);
+      else card.appendChild(line);
+    }
+    line.innerHTML = '<span class="inline-block w-2.5 h-2.5 border border-amber-400 border-t-transparent rounded-full animate-spin"></span><span></span>';
+    line.lastChild.textContent = OP_LABELS[op].busy;
+  });
+};
+
+window.runServiceOperation = function (action, serviceName, command) {
+  const pending = window.getPendingOp(serviceName);
+  if (pending) {
+    window.logToTerminal('UI_OVERRIDE', `${serviceName} is busy (${OP_LABELS[pending].busy.replace('...', '').toLowerCase()}). Please wait.`, 'text-amber-400 font-bold');
+    return;
+  }
+  const socket = window.AppState.socket;
+  if (!socket) return;
+
+  const finish = (error) => {
+    const entry = window.AppState.pendingOps[serviceName];
+    if (!entry || entry.token !== token) return;
+    clearTimeout(entry.timer);
+    delete window.AppState.pendingOps[serviceName];
+    const failure = error || opFailures[serviceName];
+    delete opFailures[serviceName];
+    if (failure) window.logToTerminal('UI_OVERRIDE', `${action.toUpperCase()} failed for ${serviceName}: ${failure}`, 'text-red-400 font-bold');
+    else window.logToTerminal('UI_OVERRIDE', `${serviceName} ${OP_LABELS[action].done} successfully.`, 'text-emerald-400 font-bold');
+    window.applyPendingOps();
+    socket.emit('get_projects');
+  };
+
+  const token = Symbol(serviceName);
+  delete opFailures[serviceName];
+  window.AppState.pendingOps[serviceName] = {
+    action,
+    token,
+    timer: setTimeout(() => finish('No response from server.'), OP_TIMEOUT_MS),
+  };
+  window.logToTerminal('UI_OVERRIDE', `${OP_LABELS[action].busy.replace('...', '')} ${serviceName}...`, 'text-amber-400 font-bold');
+  window.applyPendingOps();
+  try {
+    socket.emit('ui_command', { command }, (ack) => {
+      finish(ack && ack.ok === false ? (ack.error || 'Command rejected.') : null);
+    });
+  } catch (err) {
+    finish(err?.message || 'Request failed.');
+  }
+};
+
 // --- ACTION BUTTON ROUTERS ---
 window.serviceAction = function (action, serviceName) {
   if (action === 'start') {
@@ -1713,8 +1793,7 @@ window.serviceAction = function (action, serviceName) {
     window.logToTerminal('UI_OVERRIDE', `Clearing PM2 logs for ${serviceName}`, 'text-zinc-400 font-bold');
     window.AppState.socket?.emit('ui_command', { command: `flush ${serviceName}` });
   } else {
-    window.logToTerminal('UI_OVERRIDE', `Initiating ${action.toUpperCase()} sequence for ${serviceName}`, 'text-amber-400 font-bold');
-    window.AppState.socket?.emit('ui_command', { command: `${action} ${serviceName}` });
+    window.runServiceOperation(action, serviceName, `${action} ${serviceName}`);
   }
 };
 

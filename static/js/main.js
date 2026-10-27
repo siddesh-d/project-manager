@@ -277,7 +277,7 @@ socket.on('pm2_telemetry', (data) => {
                 <div data-role="service-path" class="text-[9px] text-cyan-600/80 font-mono truncate mb-1"></div>
                 <div class="text-[9px] text-zinc-500/80 mb-3 italic leading-relaxed">This service was previously removed. You can restore it or clear its old logs.</div>
                 <div class="flex gap-1 pt-2 border-t border-red-900/30">
-                  <button onclick="serviceAction('start', '${srv.name}')" class="btn-ui btn-ui-emerald flex-[2] text-[9px] py-1 font-bold tracking-widest">RESTORE SERVICE</button>
+                  <button data-svc-action onclick="serviceAction('start', '${srv.name}')" class="btn-ui btn-ui-emerald flex-[2] text-[9px] py-1 font-bold tracking-widest">RESTORE SERVICE</button>
                   <button onclick="serviceAction('flush', '${srv.name}')" class="btn-ui btn-ui-zinc flex-1 text-[9px] py-1">CLEAR LOGS</button>
                 </div>
             `;
@@ -300,7 +300,7 @@ socket.on('pm2_telemetry', (data) => {
     const canMutateServices = window.userMayMutateServices();
     let moreItemsHTML = canMutateServices
       ? (isOnline
-        ? `<button onclick="promptStopService('${srv.name}')" class="btn-ui btn-ui-amber text-left text-[9px] py-1 px-2">STOP</button><button onclick="serviceAction('flush', '${srv.name}')" class="btn-ui btn-ui-zinc text-left text-[9px] py-1 px-2">CLEAR LOGS</button><button onclick="promptRemoveService('${srv.name}')" class="btn-ui btn-ui-red text-left text-[9px] py-1 px-2">REMOVE</button>`
+        ? `<button data-svc-action onclick="promptStopService('${srv.name}')" class="btn-ui btn-ui-amber text-left text-[9px] py-1 px-2">STOP</button><button onclick="serviceAction('flush', '${srv.name}')" class="btn-ui btn-ui-zinc text-left text-[9px] py-1 px-2">CLEAR LOGS</button><button onclick="promptRemoveService('${srv.name}')" class="btn-ui btn-ui-red text-left text-[9px] py-1 px-2">REMOVE</button>`
         : `<button onclick="serviceAction('flush', '${srv.name}')" class="btn-ui btn-ui-zinc text-left text-[9px] py-1 px-2">CLEAR LOGS</button><button onclick="promptRemoveService('${srv.name}')" class="btn-ui btn-ui-red text-left text-[9px] py-1 px-2">REMOVE</button>`)
       : `<button onclick="serviceAction('flush', '${srv.name}')" class="btn-ui btn-ui-zinc text-left text-[9px] py-1 px-2">VIEW LOGS</button>`;
     moreItemsHTML += '<button data-role="download-logs" class="btn-ui btn-ui-cyan text-left text-[9px] py-1 px-2">DOWNLOAD LOGS</button>';
@@ -309,8 +309,8 @@ socket.on('pm2_telemetry', (data) => {
 
     const controlsHTML = canMutateServices
       ? (isOnline
-        ? `<div class="flex gap-1"><button onclick="serviceAction('restart', '${srv.name}')" class="btn-ui btn-ui-cyan flex-1 text-[9px] py-1 font-bold tracking-widest">RESTART</button><button data-role="log-btn" onclick="serviceAction('log', '${srv.name}')" class="btn-ui flex-1 transition-all text-[9px] py-1 border ${logBtnClass}">${logBtnText}</button></div>`
-        : `<div class="flex gap-1"><button onclick="serviceAction('restart', '${srv.name}')" class="btn-ui btn-ui-emerald flex-1 text-[9px] py-1 font-bold tracking-widest">RESTART</button><button data-role="log-btn" onclick="serviceAction('log', '${srv.name}')" class="btn-ui flex-1 transition-all text-[9px] py-1 border ${logBtnClass}">${logBtnText}</button></div>`)
+        ? `<div class="flex gap-1"><button data-svc-action onclick="serviceAction('restart', '${srv.name}')" class="btn-ui btn-ui-cyan flex-1 text-[9px] py-1 font-bold tracking-widest">RESTART</button><button data-role="log-btn" onclick="serviceAction('log', '${srv.name}')" class="btn-ui flex-1 transition-all text-[9px] py-1 border ${logBtnClass}">${logBtnText}</button></div>`
+        : `<div class="flex gap-1"><button data-svc-action onclick="serviceAction('restart', '${srv.name}')" class="btn-ui btn-ui-emerald flex-1 text-[9px] py-1 font-bold tracking-widest">RESTART</button><button data-role="log-btn" onclick="serviceAction('log', '${srv.name}')" class="btn-ui flex-1 transition-all text-[9px] py-1 border ${logBtnClass}">${logBtnText}</button></div>`)
       : `<div class="flex gap-1"><button data-role="log-btn" onclick="serviceAction('log', '${srv.name}')" class="btn-ui flex-1 transition-all text-[9px] py-1 border ${logBtnClass}">${logBtnText}</button></div>`;
 
     card.className = `flex flex-col p-2 bg-${colorBase}-950/10 border border-${colorBase}-900/40 mb-1 hover:border-${colorBase}-500/50 transition-colors shrink-0`;
@@ -443,6 +443,8 @@ socket.on('pm2_telemetry', (data) => {
       healthEl.className = "font-bold tracking-widest text-emerald-400";
     }
   }
+
+  window.applyPendingOps?.();
 });
 
 socket.on('log_stream_intent', (data) => {
@@ -521,6 +523,7 @@ socket.on('project_start_result', (result) => {
   if (!result) return;
 
   const serviceName = (result.target || 'service').toString();
+  window.noteOpResult?.(serviceName, result);
   if (result.ok) {
     window.logToTerminal('PROJECTS', `Start succeeded for ${serviceName}.`, 'text-emerald-400 font-bold');
   } else {
