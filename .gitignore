@@ -23,6 +23,12 @@ ENV/
 .tenants.json
 .users.json
 
+# Local, machine-specific data (copy from *.example.json)
+/users.json
+/tenants.json
+/users/
+/tenants/
+
 dist/
 build/
 *.egg-info/

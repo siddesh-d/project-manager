@@ -1,4 +1,132 @@
 {
   "core_project_path": "${HOME}/Documents/deployment",
-  "projects": []
+  "projects": [
+    {
+      "name": "auth",
+      "friendly_name": "auth",
+      "path": "${HOME}/Documents/deployment/auth",
+      "deployment_profile": {
+        "project_type": "node",
+        "include_paths": [
+          "**"
+        ],
+        "exclude_paths": [
+          ".git/**",
+          ".svn/**",
+          ".hg/**",
+          "__pycache__/**",
+          "*.pyc",
+          "*.pyo",
+          ".DS_Store",
+          "Thumbs.db",
+          "node_modules/**",
+          ".next/**",
+          ".nuxt/**",
+          "coverage/**"
+        ],
+        "required_files": [
+          "package.json"
+        ],
+        "env_mode": "optional",
+        "install_command": "npm install",
+        "build_command": "npm run build",
+        "build_policy": "if_missing",
+        "runtime_entry": "dist/main.js",
+        "auto_install": true,
+        "auto_build": true
+      },
+      "runtime_state": {
+        "deps_installed": true,
+        "install_fingerprint": "69b4c91132c7fd6b9bd77e15da0c3f17dc471a197d63f16f3ead4d2c3fd463d3",
+        "last_ready_at": 1793114625,
+        "last_error_stage": "",
+        "last_error": ""
+      }
+    },
+    {
+      "name": "custom",
+      "friendly_name": "custom",
+      "path": "${HOME}/Documents/Projects/quasonfleet-nodejs-custom",
+      "deployment_profile": {
+        "project_type": "node",
+        "include_paths": [
+          "**"
+        ],
+        "exclude_paths": [
+          ".git/**",
+          ".svn/**",
+          ".hg/**",
+          "__pycache__/**",
+          "*.pyc",
+          "*.pyo",
+          ".DS_Store",
+          "Thumbs.db",
+          "node_modules/**",
+          ".next/**",
+          ".nuxt/**",
+          "coverage/**"
+        ],
+        "required_files": [
+          "package.json"
+        ],
+        "env_mode": "optional",
+        "install_command": "npm install",
+        "build_command": "npm run build",
+        "build_policy": "if_missing",
+        "runtime_entry": "dist/main.js",
+        "auto_install": true,
+        "auto_build": true
+      },
+      "runtime_state": {
+        "deps_installed": true,
+        "install_fingerprint": "d512ac06884a64c3757d53f5df2b69d5224c2ceffa4e372cf87c8f1af8f1ed8c",
+        "last_ready_at": 1793114639,
+        "last_error_stage": "",
+        "last_error": ""
+      }
+    },
+    {
+      "name": "react",
+      "friendly_name": "react",
+      "path": "${HOME}/Documents/deployment/react",
+      "deployment_profile": {
+        "project_type": "node",
+        "include_paths": [
+          "**"
+        ],
+        "exclude_paths": [
+          ".git/**",
+          ".svn/**",
+          ".hg/**",
+          "__pycache__/**",
+          "*.pyc",
+          "*.pyo",
+          ".DS_Store",
+          "Thumbs.db",
+          "node_modules/**",
+          ".next/**",
+          ".nuxt/**",
+          "coverage/**"
+        ],
+        "required_files": [
+          "package.json"
+        ],
+        "env_mode": "optional",
+        "install_command": "npm install",
+        "build_command": "npm run build",
+        "build_policy": "never",
+        "runtime_entry": "build/index.html",
+        "auto_install": false,
+        "auto_build": false
+      },
+      "runtime_state": {
+        "deps_installed": false,
+        "last_ready_at": 1793115633,
+        "last_error_stage": "",
+        "last_error": "",
+        "install_fingerprint": "78f51bf4465a9c9b98d4e7bb860c59178484185042d71def3fc7412fa1ca3874"
+      },
+      "custom_start": "npm run start:prod"
+    }
+  ]
 }

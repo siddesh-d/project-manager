@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -284,6 +285,15 @@ def _is_valid_password_hash(password_hash, password):
 def ensure_default_admin_user():
     users_file = _get_users_file()
     users_file.parent.mkdir(parents=True, exist_ok=True)
+    if not users_file.exists():
+        example = users_file.with_name(users_file.stem + ".example" + users_file.suffix)
+        if example.exists():
+            shutil.copyfile(example, users_file)
+        print(
+            f"[setup] {users_file.name} not found - created a new one from the template.\n"
+            f"        Default admin user is '{DEFAULT_ADMIN_USERNAME}'. Set JARVIS_ADMIN_PASSWORD "
+            "(e.g. in .env) before first run to choose its password, and change it after login."
+        )
     store = load_user_store()
     users = store.get("users", [])
     valid_users = []
