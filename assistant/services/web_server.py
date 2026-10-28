@@ -30,6 +30,7 @@ from assistant.auth import (
     save_tenant_store,
     save_user_store,
     set_tenant_core_project_path,
+    change_user_password,
     update_tenant_user,
     user_has_permission,
     user_has_scope_access,
@@ -695,7 +696,7 @@ def enforce_authentication():
             return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
         return None
 
-    if request.path.startswith('/api/') and request.path not in {'/api/login', '/api/session', '/api/logout'}:
+    if request.path.startswith('/api/') and request.path not in {'/api/login', '/api/session', '/api/logout', '/api/change-password'}:
         if not _require_scope_access() and not _require_admin_auth():
             return jsonify({'ok': False, 'error': 'Access denied.'}), 403
 
@@ -745,6 +746,23 @@ def logout():
                             pass
                         active_log_processes.pop(key, None)
     return jsonify({'ok': True})
+
+
+@app.route('/api/change-password', methods=['POST'])
+def change_password():
+    user = _get_authenticated_user()
+    if not user:
+        return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
+
+    data = request.get_json(silent=True) or {}
+    new_password = str(data.get('new_password') or '')
+    if new_password != str(data.get('confirm_password') or ''):
+        return jsonify({'ok': False, 'error': 'New password and confirmation do not match.'}), 400
+    try:
+        change_user_password(user['id'], data.get('current_password'), new_password)
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    return jsonify({'ok': True, 'message': 'Password updated successfully.'})
 
 
 @app.route('/api/session', methods=['GET'])

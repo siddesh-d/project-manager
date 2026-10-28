@@ -184,6 +184,8 @@ def _normalize_user_record(user_record):
     elif user_record.get("password"):
         user["password_hash"] = generate_password_hash(str(user_record["password"]))
         user["password"] = str(user_record["password"])
+    if user_record.get("password_changed"):
+        user["password_changed"] = True
 
     return user
 
@@ -324,7 +326,11 @@ def ensure_default_admin_user():
             admin.pop("password", None)
         if "password_hash" not in admin:
             admin["password_hash"] = generate_password_hash(DEFAULT_ADMIN_PASSWORD)
-        elif admin.get("username") == DEFAULT_ADMIN_USERNAME and not _is_valid_password_hash(admin.get("password_hash"), DEFAULT_ADMIN_PASSWORD):
+        elif (
+            admin.get("username") == DEFAULT_ADMIN_USERNAME
+            and not admin.get("password_changed")
+            and not _is_valid_password_hash(admin.get("password_hash"), DEFAULT_ADMIN_PASSWORD)
+        ):
             admin["password_hash"] = generate_password_hash(DEFAULT_ADMIN_PASSWORD)
         admin.setdefault("tenant_id", None)
         admin.setdefault("project_ids", [])
@@ -361,6 +367,35 @@ def verify_user(username, password):
     if not password_hash:
         return False
     return check_password_hash(password_hash, str(password or ""))
+
+
+MIN_PASSWORD_LENGTH = 8
+
+
+def change_user_password(user_id, current_password, new_password):
+    """Change a user's own password after verifying the current one. Raises ValueError on invalid input."""
+    current_password = str(current_password or "")
+    new_password = str(new_password or "")
+    if not current_password:
+        raise ValueError("Current password is required.")
+    if len(new_password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"New password must be at least {MIN_PASSWORD_LENGTH} characters.")
+    if new_password == current_password:
+        raise ValueError("New password must be different from the current password.")
+
+    ensure_default_admin_user()
+    store = load_user_store()
+    lookup = str(user_id or "").strip()
+    for user in store.get("users", []):
+        if isinstance(user, dict) and user.get("id") == lookup:
+            if not _is_valid_password_hash(user.get("password_hash"), current_password):
+                raise ValueError("Current password is incorrect.")
+            user["password_hash"] = generate_password_hash(new_password)
+            user["password_changed"] = True
+            user.pop("password", None)
+            save_user_store(store)
+            return True
+    raise ValueError("User not found.")
 
 
 def ensure_user_settings_root(user_id):

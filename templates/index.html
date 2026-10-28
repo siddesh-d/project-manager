@@ -441,6 +441,22 @@
 
       </div>
 
+      <div class="flex flex-col gap-2 bg-cyan-950/20 p-3 border border-cyan-900/40 mb-6">
+        <span class="text-[10px] text-cyan-300 tracking-widest">CHANGE PASSWORD</span>
+        <input id="pw-current" type="password" autocomplete="current-password" placeholder="Current password"
+          class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none" />
+        <input id="pw-new" type="password" autocomplete="new-password" placeholder="New password (min 8 characters)"
+          class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none" />
+        <input id="pw-confirm" type="password" autocomplete="new-password" placeholder="Confirm new password"
+          onkeydown="if (event.key === 'Enter') submitPasswordChange()"
+          class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none" />
+        <div id="pw-message" class="hidden text-[9px] font-bold tracking-widest"></div>
+        <div class="flex justify-end">
+          <button onclick="submitPasswordChange()"
+            class="btn-ui btn-ui-emerald px-4 py-1.5 text-[9px] font-bold tracking-widest">UPDATE PASSWORD</button>
+        </div>
+      </div>
+
       <div class="flex justify-end">
         <button onclick="toggleSettingsModal()"
           class="btn-ui btn-ui-cyan px-6 py-2 text-[10px] font-bold tracking-widest">SAVE
