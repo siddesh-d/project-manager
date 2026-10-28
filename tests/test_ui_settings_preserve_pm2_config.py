@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from assistant.core.command_center import _normalize_settings
+from assistant.core.settings_store import normalize_settings as _normalize_settings
 
 
 class TestUiSettingsPreservePm2Config(unittest.TestCase):

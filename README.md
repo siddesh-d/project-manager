@@ -5,9 +5,14 @@
 ```
 assistant/
   config/      settings and environment loading (reads .env)
-  core/        app entry point, boot sequence, command center
+  core/        app.py (composition root), boot sequence,
+               command_center (command orchestration),
+               conversation (log/voice/question I/O, UI sinks injected),
+               settings_store (settings schema + persistence)
   registry/    project registry
-  services/    web server, PM2, voice, file operations
+  services/    web server, PM2 (pm2_cli = PM2 CLI access,
+               pm2_manager = monitoring), project_runtime
+               (install/build/env prep), voice, file operations
   auth.py      users, tenants, roles
 static/        frontend JS/CSS
 templates/     HTML templates

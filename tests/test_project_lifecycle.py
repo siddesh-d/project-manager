@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from assistant.core import command_center
+from assistant.services import project_runtime
 from assistant.registry import projects
 from assistant.services import web_server
 
@@ -210,8 +211,8 @@ class TestProjectLifecycle(unittest.TestCase):
         self.assertIn("not accessible", loaded[0].get("runtime_state", {}).get("last_error", ""))
 
     def test_prepare_install_command_reports_missing_npm(self):
-        with tempfile.TemporaryDirectory() as tmpdir, patch.object(command_center, "_resolve_executable", return_value=None):
-            command, error = command_center._prepare_install_command(
+        with tempfile.TemporaryDirectory() as tmpdir, patch.object(project_runtime, "resolve_executable", return_value=None):
+            command, error = project_runtime.prepare_install_command(
                 ["npm", "ci"],
                 "node",
                 tmpdir,

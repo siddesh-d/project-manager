@@ -1,250 +1,60 @@
+"""Command orchestration: interprets text/voice commands and drives service lifecycle.
+
+Lower-level concerns live in dedicated modules:
+  - ``conversation``   messaging, confirmation prompts, UI sinks
+  - ``settings_store`` settings persistence
+  - ``services.pm2_cli`` / ``services.project_runtime`` PM2 and project preparation
+"""
+import os
+import re
 import subprocess
 import time
-import re
-import json
-import os
-import hashlib
-import queue
-import threading
-import sys
-import shlex
-import shutil
+
+from assistant.config import PM2_EXECUTABLE
+from assistant.core import settings_store
+from assistant.core.conversation import (  # noqa: F401 - re-exported for existing callers
+    ask_question,
+    broadcast,
+    emit_event,
+    require_confirmation,
+    stream_log,
+    submit_reply,
+)
 from assistant.registry.projects import (
     get_projects,
     refresh_project_deployment_profile,
     update_runtime_state,
 )
-from assistant.config import SETTINGS_FILE, PM2_EXECUTABLE, DEFAULT_PM2_FIELD_CONFIG
-from assistant.config import ASSISTANT_LOG_LABEL
+from assistant.services import pm2_cli, project_runtime
 
-from assistant.services import web_server
+# Backward-compatible names used across the codebase and tests.
+SETTINGS_SCHEMA = settings_store.SETTINGS_SCHEMA
+SETTINGS_ALIASES = settings_store.SETTINGS_ALIASES
+_coerce_setting_value = settings_store.coerce_setting_value
+_load_settings_file = settings_store.load_settings
+_persist_settings_file = settings_store.persist_settings
+resolve_pm2_target = pm2_cli.resolve_pm2_target
+_delete_pm2_service = pm2_cli.delete_pm2_service
+_looks_like_missing_module_error = pm2_cli.looks_like_missing_module_error
+_run_command_with_output = project_runtime.run_command_with_output
+_prepare_install_command = project_runtime.prepare_install_command
+_load_dotenv_vars = project_runtime.load_dotenv_vars
+_derive_install_command = project_runtime.derive_install_command
+_runtime_profile = project_runtime.runtime_profile
+_validate_project_requirements = project_runtime.validate_project_requirements
+_install_fingerprint = project_runtime.install_fingerprint
+_build_fingerprint = project_runtime.build_fingerprint
+_needs_build = project_runtime.needs_build
+_start_pm2_entry = project_runtime.start_pm2_entry
 
-# =====================================================================
-# GLOBAL CONVERSATION STATE & UNIFIED PIPELINES
-# =====================================================================
-active_conversation_queue = None
-
-SETTINGS_SCHEMA = {
-    "engine": "browser",
-    "mic": False,
-    "speaker": False,
-    "autolisten": False,
-    "voiceURI": "",
-    "volume": 1.0,
-    "rate": 1.0,
-}
-
-SETTINGS_ALIASES = {
-    "voiceuri": "voiceURI",
-}
-
-
-def _coerce_setting_value(key, raw_value):
-    if not isinstance(raw_value, str):
-        return raw_value
-
-    lower = raw_value.lower()
-    if lower == "true":
-        return True
-    if lower == "false":
-        return False
-
-    if key in {"volume", "rate"}:
-        try:
-            return float(raw_value)
-        except (TypeError, ValueError):
-            return raw_value
-
-    # Preserve string representation for numeric-like values expected by UI sliders.
-    return raw_value
-
-
-def _normalize_pm2_settings(raw_pm2):
-    default_fields = dict(DEFAULT_PM2_FIELD_CONFIG)
-    normalized = {
-        "refresh_seconds": 5,
-        "fields": dict(default_fields),
-    }
-
-    if not isinstance(raw_pm2, dict):
-        return normalized
-
-    refresh_seconds = raw_pm2.get("refresh_seconds", normalized["refresh_seconds"])
-    try:
-        normalized["refresh_seconds"] = max(1, int(refresh_seconds))
-    except (TypeError, ValueError):
-        normalized["refresh_seconds"] = 5
-
-    fields = raw_pm2.get("fields", {})
-    if isinstance(fields, dict):
-        for field_name, default_value in default_fields.items():
-            if field_name not in fields:
-                continue
-            value = fields[field_name]
-            if isinstance(value, str):
-                normalized_value = value.strip().lower() in {"1", "true", "yes", "on"}
-            else:
-                normalized_value = bool(value)
-            normalized["fields"][field_name] = normalized_value
-
-    return normalized
-
-
-def _normalize_settings(raw_settings):
-    normalized = dict(SETTINGS_SCHEMA)
-
-    if not isinstance(raw_settings, dict):
-        return normalized
-
-    merged = dict(raw_settings)
-    for old_key, new_key in SETTINGS_ALIASES.items():
-        if new_key not in merged and old_key in merged:
-            merged[new_key] = merged[old_key]
-
-    for key in SETTINGS_SCHEMA:
-        if key in merged:
-            normalized[key] = _coerce_setting_value(key, merged[key])
-
-    for key, value in merged.items():
-        if key not in normalized and key != "pm2":
-            normalized[key] = value
-
-    if "pm2" in merged:
-        normalized["pm2"] = _normalize_pm2_settings(merged["pm2"])
-
-    if normalized["engine"] not in {"browser", "legacy"}:
-        normalized["engine"] = SETTINGS_SCHEMA["engine"]
-
-    for key in ("mic", "speaker", "autolisten"):
-        normalized[key] = bool(normalized[key])
-
-    if not isinstance(normalized["voiceURI"], str):
-        normalized["voiceURI"] = str(normalized["voiceURI"])
-
-    try:
-        normalized["volume"] = float(normalized["volume"])
-    except (TypeError, ValueError):
-        normalized["volume"] = SETTINGS_SCHEMA["volume"]
-
-    try:
-        normalized["rate"] = float(normalized["rate"])
-    except (TypeError, ValueError):
-        normalized["rate"] = SETTINGS_SCHEMA["rate"]
-
-    return normalized
-
-
-def _load_settings_file():
-    settings = dict(SETTINGS_SCHEMA)
-
-    if SETTINGS_FILE.exists():
-        try:
-            with SETTINGS_FILE.open("r", encoding="utf-8") as f:
-                loaded = json.load(f)
-                settings = _normalize_settings(loaded)
-        except Exception:
-            # Keep safe defaults when the file is malformed instead of forcing mic/speaker true.
-            pass
-
-    return settings
-
-
-def _persist_settings_file(settings):
-    normalized = _normalize_settings(settings)
-
-    if "pm2" not in normalized and SETTINGS_FILE.exists():
-        try:
-            with SETTINGS_FILE.open("r", encoding="utf-8") as existing_handle:
-                existing = json.load(existing_handle)
-            if isinstance(existing, dict) and "pm2" in existing:
-                normalized["pm2"] = _normalize_pm2_settings(existing.get("pm2", {}))
-        except Exception:
-            pass
-
-    tmp_path = SETTINGS_FILE.with_suffix(SETTINGS_FILE.suffix + ".tmp")
-    with tmp_path.open("w", encoding="utf-8") as f:
-        json.dump(normalized, f)
-    os.replace(tmp_path, SETTINGS_FILE)
-
-def broadcast(voice, message, log_type=ASSISTANT_LOG_LABEL, color="text-cyan-300", speak=True, wait=False):
-    has_web_stream = 'web_server' in globals() or 'web_server' in sys.modules
-    if has_web_stream:
-        web_server.stream_log_to_ui(log_type, message, color)
-    
-    should_speak = bool(speak and voice and (not has_web_stream or not getattr(voice, 'muted', False)))
-
-    if should_speak:
-        if wait:
-            voice.speak_and_wait(message)
-        else:
-            voice.speak_async(message)
-    elif not has_web_stream:
-        print(f"\n[{log_type}]: {message}")
-
-def ask_question(voice, ear, prompt_text, timeout=12.0):
-    global active_conversation_queue
-    broadcast(voice, prompt_text, color="text-amber-400 font-bold", speak=True, wait=True)
-    
-    current_queue = queue.Queue()
-    active_conversation_queue = current_queue
-    
-    if ear and getattr(ear, 'mic_enabled', True):
-        def listen_worker():
-            try:
-                cmd = ear.get_command()
-                if cmd and str(cmd).strip():
-                    current_queue.put(cmd)
-            except Exception:
-                pass
-        threading.Thread(target=listen_worker, daemon=True).start()
-        
-    try:
-        response = current_queue.get(timeout=timeout)
-    except queue.Empty:
-        response = None
-        
-    active_conversation_queue = None
-    return response
-
-def require_confirmation(voice, ear, action, target, is_ui_exact):
-    if is_ui_exact:
-        return True 
-
-    prompt = f"Warning. You are about to {action} {target}. Are you sure you want to proceed?"
-    response = ask_question(voice, ear, prompt)
-    
-    if response and any(w in str(response).lower() for w in ["yes", "sure", "do it", "okay", "yep", "confirm", "proceed"]):
-        return True
-        
-    broadcast(voice, f"{action.capitalize()} operation cancelled.", color="text-amber-500", speak=True)
-    return False
 
 # =====================================================================
 # SYSTEM STATUS & TELEMETRY
 # =====================================================================
 def display_advanced_status(voice):
-    try:
-        env = os.environ.copy()
-        env["NODE_NO_WARNINGS"] = "1"
-        result = subprocess.run([PM2_EXECUTABLE, 'jlist'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        if result.returncode != 0 or not result.stdout.strip():
-            broadcast(voice, "I could not retrieve the active P M 2 process list.", color="text-red-400", speak=True)
-            return
-            
-        output = result.stdout.strip()
-        processes = []
-        
-        # ULTIMATE SHIELD: Read lines in reverse to find the true JSON payload, ignoring PM2 update nags
-        for line in reversed(output.split('\n')):
-            line = line.strip()
-            if line.startswith('[') and line.endswith(']'):
-                try:
-                    processes = json.loads(line)
-                    break
-                except Exception:
-                    continue
-    except Exception:
-        broadcast(voice, "Error reading P M 2 registry.", color="text-red-400", speak=True)
+    processes = pm2_cli.fetch_pm2_processes()
+    if processes is None:
+        broadcast(voice, "I could not retrieve the active P M 2 process list.", color="text-red-400", speak=True)
         return
 
     if not processes:
@@ -254,21 +64,20 @@ def display_advanced_status(voice):
     table_output = "\n" + "="*95 + "\n"
     table_output += f"{'PID':<6} | {'SERVICE NAME':<20} | {'STATUS':<10} | {'UPTIME':<12} | {'CPU':<6} | {'MEM':<8} | {'RESTARTS':<8}\n"
     table_output += "-" * 95 + "\n"
-    
+
     online_count = 0
     offline_count = 0
-    
+
     for p in processes:
         pid = p.get("pm_id", "N/A")
         name = p.get("name", "N/A")
         status = p.get("pm2_env", {}).get("status", "unknown")
         restarts = p.get("pm2_env", {}).get("restart_time", 0)
-        
+
         monit = p.get("monit") or {}
         cpu = monit.get("cpu", 0)
-        mem_bytes = monit.get("memory", 0)
-        mem_mb = int(mem_bytes / (1024 * 1024))
-        
+        mem_mb = int(monit.get("memory", 0) / (1024 * 1024))
+
         pm_uptime = p.get("pm2_env", {}).get("pm_uptime", 0)
         if pm_uptime > 0 and status == "online":
             uptime_sec = (time.time() * 1000 - pm_uptime) / 1000
@@ -284,13 +93,11 @@ def display_advanced_status(voice):
             offline_count += 1
 
         table_output += f"{pid:<6} | {name:<20} | {status.upper():<10} | {uptime_str:<12} | {f'{cpu}%':<6} | {f'{mem_mb}MB':<8} | {restarts:<8}\n"
-        
+
     table_output += "="*95
     print(table_output)
-    
-    if 'web_server' in globals() or 'web_server' in sys.modules:
-        web_server.stream_log_to_ui("SYSTEM", table_output, "text-cyan-400 font-mono whitespace-pre")
-    
+    stream_log("SYSTEM", table_output, "text-cyan-400 font-mono whitespace-pre")
+
     if offline_count == 0:
         broadcast(voice, f"All {online_count} managed services are currently online and stable.", speak=True)
     elif online_count == 0:
@@ -298,381 +105,29 @@ def display_advanced_status(voice):
     else:
         broadcast(voice, f"{online_count} services are online, and {offline_count} services are offline.", speak=True)
 
-def resolve_pm2_target(target_name):
-    try:
-        env = os.environ.copy()
-        env["NODE_NO_WARNINGS"] = "1"
-        result = subprocess.run([PM2_EXECUTABLE, 'jlist'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-        if result.returncode == 0 and result.stdout.strip():
-            output = result.stdout.strip()
-            processes = []
-            # ULTIMATE SHIELD
-            for line in reversed(output.split('\n')):
-                line = line.strip()
-                if line.startswith('[') and line.endswith(']'):
-                    try:
-                        processes = json.loads(line)
-                        break
-                    except Exception:
-                        continue
-            
-            target_lower = target_name.lower().strip()
-            for p in processes:
-                real_name = p.get("name", "")
-                if real_name.lower() == target_lower:
-                    return real_name
-                    
-            for p in processes:
-                real_name = p.get("name", "")
-                if target_lower in real_name.lower():
-                    return real_name
-    except Exception:
-        pass
-    return target_name
 
-
-def _run_command_with_output(command, cwd, extra_env=None):
-    env = _build_command_env(extra_env)
-    shell_mode = isinstance(command, str)
-    if isinstance(extra_env, dict):
-        for key, value in extra_env.items():
-            if key:
-                env[str(key)] = str(value)
-    process = subprocess.run(
-        command,
-        cwd=cwd,
-        shell=shell_mode,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        env=env,
-    )
-    return process.returncode, process.stdout or ""
-
-
-def _build_command_env(extra_env=None):
-    env = os.environ.copy()
-    if isinstance(extra_env, dict):
-        for key, value in extra_env.items():
-            if key:
-                env[str(key)] = str(value)
-
-    merged_paths = []
-    seen = set()
-    existing_path = str(env.get("PATH") or "")
-    for segment in existing_path.split(os.pathsep):
-        seg = str(segment or "").strip()
-        if not seg:
-            continue
-        key = os.path.normcase(seg)
-        if key in seen:
-            continue
-        seen.add(key)
-        merged_paths.append(seg)
-
-    extra_bin_path = str(os.getenv("EXTRA_BIN_PATH") or "").strip()
-    if extra_bin_path:
-        for segment in extra_bin_path.split(os.pathsep):
-            seg = str(segment or "").strip()
-            if not seg:
-                continue
-            key = os.path.normcase(seg)
-            if key in seen:
-                continue
-            seen.add(key)
-            merged_paths.append(seg)
-
-    if os.name != "nt":
-        for fallback in [
-            "/usr/local/bin",
-            "/usr/bin",
-            "/bin",
-            "/usr/local/sbin",
-            "/usr/sbin",
-            "/sbin",
-            "/opt/homebrew/bin",
-            "/home/linuxbrew/.linuxbrew/bin",
-        ]:
-            key = os.path.normcase(fallback)
-            if key in seen:
-                continue
-            seen.add(key)
-            merged_paths.append(fallback)
-
-    env["PATH"] = os.pathsep.join(merged_paths)
-    return env
-
-
-def _resolve_executable(command_name, env=None):
-    if not command_name:
-        return None
-
-    env = env or _build_command_env({})
-    token = str(command_name).strip()
-    if not token:
-        return None
-
-    if any(ch in token for ch in ('/', '\\')):
-        return token if os.path.exists(token) else None
-
-    candidates = [token]
-    if os.name == "nt":
-        lowered = token.lower()
-        if lowered == "npm":
-            candidates = ["npm.cmd", "npm.exe", "npm"]
-        elif lowered == "yarn":
-            candidates = ["yarn.cmd", "yarn.exe", "yarn"]
-        elif lowered == "pnpm":
-            candidates = ["pnpm.cmd", "pnpm.exe", "pnpm"]
-
-    search_path = env.get("PATH")
-    for candidate in candidates:
-        resolved = shutil.which(candidate, path=search_path)
-        if resolved:
-            return resolved
-    return None
-
-
-def _detect_node_package_manager(path):
-    if os.path.exists(os.path.join(path, "pnpm-lock.yaml")):
-        return "pnpm"
-    if os.path.exists(os.path.join(path, "yarn.lock")):
-        return "yarn"
-    return "npm"
-
-
-def _prepare_install_command(install_command, project_type, project_path, extra_env=None):
-    env = _build_command_env(extra_env)
-
-    if isinstance(install_command, (list, tuple)):
-        command_list = [str(part) for part in install_command if str(part).strip()]
-    else:
-        command_text = str(install_command or "").strip()
-        if not command_text:
-            return None, None
-        command_list = None
-
-    if command_list:
-        executable_token = command_list[0]
-        resolved = _resolve_executable(executable_token, env)
-        if not resolved:
-            lowered = executable_token.lower()
-            if lowered in {"npm", "yarn", "pnpm"}:
-                return None, (
-                    f"{lowered} is not installed or not available in PATH. "
-                    f"Install Node.js tooling ({lowered}) and retry. "
-                    f"If launching with sudo, ensure PATH includes standard binary folders "
-                    f"                    or set EXTRA_BIN_PATH."
-                )
-            return None, f"Required command '{executable_token}' is not available in PATH."
-        command_list[0] = resolved
-        return command_list, None
-
-    tokens = []
-    try:
-        tokens = shlex.split(command_text, posix=(os.name != "nt"))
-    except ValueError:
-        tokens = command_text.split()
-
-    if tokens:
-        tool = tokens[0]
-        lowered = tool.lower()
-        if lowered in {"npm", "yarn", "pnpm"}:
-            resolved = _resolve_executable(lowered, env)
-            if not resolved:
-                return None, (
-                    f"{lowered} is not installed or not available in PATH. "
-                    f"Install Node.js tooling ({lowered}) and retry. "
-                    f"If launching with sudo, ensure PATH includes standard binary folders "
-                    f"or set EXTRA_BIN_PATH."
-                )
-
-    if project_type == "node" and not os.path.exists(os.path.join(project_path, "package.json")):
-        return None, "package.json is missing for Node project dependency install."
-
-    return command_text, None
-
-
-def _load_dotenv_vars(project_path):
-    env_file = os.path.join(project_path, ".env")
-    if not os.path.exists(env_file):
-        return {}
-
-    parsed = {}
-    try:
-        with open(env_file, "r", encoding="utf-8") as f:
-            for raw_line in f:
-                line = raw_line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if line.lower().startswith("export "):
-                    line = line[7:].strip()
-                if "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                key = key.strip()
-                if not key:
-                    continue
-                value = value.strip()
-                if len(value) >= 2 and ((value[0] == '"' and value[-1] == '"') or (value[0] == "'" and value[-1] == "'")):
-                    value = value[1:-1]
-                parsed[key] = value
-    except Exception:
-        return {}
-    return parsed
-
-
-def _fingerprint_files(base_path, relative_paths):
-    digest = hashlib.sha256()
-    for rel in relative_paths:
-        full_path = os.path.join(base_path, rel)
-        if not os.path.exists(full_path):
-            continue
-        try:
-            digest.update(rel.encode("utf-8", errors="ignore"))
-            with open(full_path, "rb") as f:
-                while True:
-                    chunk = f.read(1024 * 128)
-                    if not chunk:
-                        break
-                    digest.update(chunk)
-        except OSError:
-            continue
-    return digest.hexdigest()
-
-
-def _source_tree_signature(path):
-    src_dir = os.path.join(path, "src")
-    if not os.path.isdir(src_dir):
-        return ""
-
-    newest = 0
-    count = 0
-    for root, _, files in os.walk(src_dir):
-        for name in files:
-            full_path = os.path.join(root, name)
-            try:
-                stat_info = os.stat(full_path)
-            except OSError:
-                continue
-            newest = max(newest, int(stat_info.st_mtime))
-            count += 1
-
-    return f"{count}:{newest}"
-
-
-def _derive_install_command(path, profile):
-    configured = str(profile.get("install_command") or "").strip()
-    if configured:
-        return configured
-
-    project_type = str(profile.get("project_type") or "custom")
-    if project_type == "node":
-        manager = _detect_node_package_manager(path)
-        if manager == "pnpm":
-            return ["pnpm", "install", "--frozen-lockfile"]
-        if manager == "yarn":
-            return ["yarn", "install", "--frozen-lockfile"]
-        if os.path.exists(os.path.join(path, "package-lock.json")):
-            return ["npm", "ci"]
-        return ["npm", "install"]
-    if project_type == "python" and os.path.exists(os.path.join(path, "requirements.txt")):
-        return [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"]
-    return ""
-
-
-def _runtime_profile(proj):
-    profile = dict(proj.get("deployment_profile") or {})
-    profile.setdefault("project_type", "custom")
-    profile.setdefault("required_files", [])
-    profile.setdefault("env_mode", "optional")
-    profile.setdefault("build_policy", "if_missing")
-    profile.setdefault("auto_install", True)
-    profile.setdefault("auto_build", True)
-    profile.setdefault("build_command", "")
-    profile.setdefault("runtime_entry", "")
-    return profile
-
-
-def _validate_project_requirements(proj, profile):
-    path = proj.get("path", "")
-    errors = []
-
-    if not os.path.isdir(path):
-        errors.append("Project directory is missing on disk.")
-        return errors
-
-    for req in profile.get("required_files") or []:
-        required_path = os.path.join(path, req)
-        if not os.path.exists(required_path):
-            errors.append(f"Required file missing: {req}")
-
-    env_mode = str(profile.get("env_mode") or "optional").lower()
-    if env_mode == "required" and not os.path.exists(os.path.join(path, ".env")):
-        errors.append("Required environment file .env is missing.")
-
-    project_type = str(profile.get("project_type") or "custom")
-    if project_type == "node" and not os.path.exists(os.path.join(path, "package.json")):
-        errors.append("package.json is missing for Node project.")
-    if project_type == "python":
-        if not (os.path.exists(os.path.join(path, "requirements.txt")) or os.path.exists(os.path.join(path, "pyproject.toml"))):
-            errors.append("Python project is missing requirements.txt or pyproject.toml.")
-
-    return errors
-
-
-def _install_fingerprint(path, profile):
-    project_type = str(profile.get("project_type") or "custom")
-    if project_type == "node":
-        return _fingerprint_files(path, ["package-lock.json", "package.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock"])
-    if project_type == "python":
-        return _fingerprint_files(path, ["requirements.txt", "pyproject.toml", "poetry.lock"])
-    return ""
-
-
-def _build_fingerprint(path, profile):
-    base = _fingerprint_files(path, ["package.json", "package-lock.json", "tsconfig.json", "webpack.config.js"])
-    tree = _source_tree_signature(path)
-    return f"{base}:{tree}"
-
-
-def _needs_build(path, profile, runtime_state):
-    policy = str(profile.get("build_policy") or "if_missing").lower()
-    if policy == "never":
-        return False
-    if policy == "always":
-        return True
-
-    runtime_entry = str(profile.get("runtime_entry") or "").strip()
-    if policy == "if_missing":
-        if runtime_entry:
-            return not os.path.exists(os.path.join(path, runtime_entry))
-        return False
-
-    if policy == "on_change":
-        current = _build_fingerprint(path, profile)
-        previous = str(runtime_state.get("build_fingerprint") or "")
-        return current != previous
-
-    return False
+# =====================================================================
+# PROJECT RUNTIME PREPARATION & SERVICE START
+# =====================================================================
+def _record_runtime_error(name, stage, message):
+    update_runtime_state(name, {
+        "last_error_stage": stage,
+        "last_error": message,
+        "last_error_at": int(time.time()),
+    })
 
 
 def _prepare_project_runtime(proj, voice):
     name = proj.get("name", "")
     path = proj.get("path", "")
+    label = proj.get('friendly_name', name)
     profile = _runtime_profile(proj)
     runtime_state = dict(proj.get("runtime_state") or {})
 
     validation_errors = _validate_project_requirements(proj, profile)
     if validation_errors:
-        update_runtime_state(name, {
-            "last_error_stage": "validate",
-            "last_error": " | ".join(validation_errors),
-            "last_error_at": int(time.time()),
-        })
-        broadcast(voice, f"Cannot start {proj.get('friendly_name', name)}: {validation_errors[0]}", color="text-red-400", speak=True)
+        _record_runtime_error(name, "validate", " | ".join(validation_errors))
+        broadcast(voice, f"Cannot start {label}: {validation_errors[0]}", color="text-red-400", speak=True)
         return False
 
     install_command = _derive_install_command(path, profile)
@@ -685,8 +140,7 @@ def _prepare_project_runtime(proj, voice):
     # If dependencies already exist on disk (for example from prior manual install),
     # treat them as installed and avoid running install on each start.
     if project_type == "node":
-        node_modules_path = os.path.join(path, "node_modules")
-        node_modules_exists = os.path.isdir(node_modules_path)
+        node_modules_exists = os.path.isdir(os.path.join(path, "node_modules"))
         deps_installed = deps_installed and node_modules_exists
         runtime_state["deps_installed"] = deps_installed
 
@@ -706,38 +160,26 @@ def _prepare_project_runtime(proj, voice):
             extra_env=project_env,
         )
         if preparation_error:
-            update_runtime_state(name, {
-                "last_error_stage": "install",
-                "last_error": preparation_error,
-                "last_error_at": int(time.time()),
-            })
-            broadcast(voice, f"Dependency installation failed for {proj.get('friendly_name', name)}.", color="text-red-400", speak=True)
+            _record_runtime_error(name, "install", preparation_error)
+            broadcast(voice, f"Dependency installation failed for {label}.", color="text-red-400", speak=True)
             return False
 
-        broadcast(voice, f"Installing dependencies for {proj.get('friendly_name', name)}...", color="text-cyan-400", speak=False)
+        broadcast(voice, f"Installing dependencies for {label}...", color="text-cyan-400", speak=False)
         code, output = _run_command_with_output(prepared_install_command, path, extra_env=project_env)
         if code != 0:
-            update_runtime_state(name, {
-                "last_error_stage": "install",
-                "last_error": output[-1500:],
-                "last_error_at": int(time.time()),
-            })
-            broadcast(voice, f"Dependency installation failed for {proj.get('friendly_name', name)}.", color="text-red-400", speak=True)
+            _record_runtime_error(name, "install", output[-1500:])
+            broadcast(voice, f"Dependency installation failed for {label}.", color="text-red-400", speak=True)
             return False
         runtime_state["install_fingerprint"] = _install_fingerprint(path, profile)
         runtime_state["deps_installed"] = True
 
     build_command = str(profile.get("build_command") or "").strip()
     if profile.get("auto_build", True) and build_command and _needs_build(path, profile, runtime_state):
-        broadcast(voice, f"Building {proj.get('friendly_name', name)}...", color="text-cyan-400", speak=False)
+        broadcast(voice, f"Building {label}...", color="text-cyan-400", speak=False)
         code, output = _run_command_with_output(build_command, path, extra_env=project_env)
         if code != 0:
-            update_runtime_state(name, {
-                "last_error_stage": "build",
-                "last_error": output[-1500:],
-                "last_error_at": int(time.time()),
-            })
-            broadcast(voice, f"Build failed for {proj.get('friendly_name', name)}.", color="text-red-400", speak=True)
+            _record_runtime_error(name, "build", output[-1500:])
+            broadcast(voice, f"Build failed for {label}.", color="text-red-400", speak=True)
             return False
         runtime_state["build_fingerprint"] = _build_fingerprint(path, profile)
 
@@ -746,92 +188,9 @@ def _prepare_project_runtime(proj, voice):
     runtime_state["last_error"] = ""
     if current_install_fp and not runtime_state.get("install_fingerprint"):
         runtime_state["install_fingerprint"] = current_install_fp
+
     update_runtime_state(name, runtime_state)
     return True
-
-
-def _pm2_service_status(pm2_name):
-    try:
-        env = os.environ.copy()
-        env["NODE_NO_WARNINGS"] = "1"
-        result = subprocess.run(
-            [PM2_EXECUTABLE, 'jlist'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
-            timeout=4,
-        )
-        if result.returncode != 0 or not result.stdout.strip():
-            return ""
-
-        processes = []
-        for line in reversed(result.stdout.strip().split('\n')):
-            line = line.strip()
-            if line.startswith('[') and line.endswith(']'):
-                try:
-                    processes = json.loads(line)
-                    break
-                except Exception:
-                    continue
-
-        for process in processes:
-            if process.get("name") == pm2_name:
-                return str(process.get("pm2_env", {}).get("status", "")).strip().lower()
-    except Exception:
-        return ""
-    return ""
-
-
-def _wait_pm2_online(pm2_name, timeout_seconds=6):
-    end_at = time.time() + max(1, timeout_seconds)
-    while time.time() < end_at:
-        status = _pm2_service_status(pm2_name)
-        if status in {"online", "launching"}:
-            return True, status
-        if status in {"errored", "stopped", "one-launch-status"}:
-            return False, status
-        time.sleep(0.6)
-    return False, _pm2_service_status(pm2_name)
-
-
-def _recent_pm2_logs(pm2_name, lines=60):
-    try:
-        result = subprocess.run(
-            [PM2_EXECUTABLE, 'logs', pm2_name, '--raw', '--nostream', '--lines', str(lines)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=6,
-        )
-        return result.stdout or ""
-    except Exception:
-        return ""
-
-
-def _looks_like_missing_module_error(text):
-    lowered = str(text or "").lower()
-    tokens = [
-        "cannot find module",
-        "err_module_not_found",
-        "module_not_found",
-    ]
-    return any(token in lowered for token in tokens)
-
-
-def _start_pm2_entry(pm2_name, path, entry_command, extra_env=None):
-    code, output = _run_command_with_output(entry_command, path, extra_env=extra_env)
-    if code != 0:
-        return False, f"PM2 start command failed (exit {code})."
-
-    online, status = _wait_pm2_online(pm2_name)
-    if online:
-        return True, ""
-
-    logs = _recent_pm2_logs(pm2_name)
-    if logs.strip():
-        return False, logs[-1200:]
-    return False, f"PM2 process status is '{status or 'unknown'}'."
 
 
 def _get_runtime_error_summary(project_name):
@@ -844,9 +203,11 @@ def _get_runtime_error_summary(project_name):
     message = str(runtime_state.get("last_error") or "").strip()
     return stage, message
 
-# =====================================================================
-# INTELLIGENT COMMAND-LINE BUILD ENGINE
-# =====================================================================
+
+def _pm2_delete_quiet(pm2_name):
+    subprocess.run(f'"{PM2_EXECUTABLE}" delete {pm2_name}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def intelligent_service_start(proj, voice, ear, instances=None):
     """Starts a project with validation, dependency install, and optional build preparation."""
     pm2_name = proj["name"]
@@ -864,7 +225,7 @@ def intelligent_service_start(proj, voice, ear, instances=None):
         elif "custom_start" in proj or str(_runtime_profile(proj).get("project_type") or "custom").lower() != "node":
             error = 'Cluster instances require a Node.js runtime entry, not a custom start command.'
         if error:
-            update_runtime_state(pm2_name, {"last_error_stage": "start", "last_error": error, "last_error_at": int(time.time())})
+            _record_runtime_error(pm2_name, "start", error)
             broadcast(voice, error, color="text-red-400", speak=False)
             return False
 
@@ -874,7 +235,7 @@ def intelligent_service_start(proj, voice, ear, instances=None):
     if not _prepare_project_runtime(proj, voice):
         return False
 
-    subprocess.run(f'"{PM2_EXECUTABLE}" delete {pm2_name}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _pm2_delete_quiet(pm2_name)
 
     profile = _runtime_profile(proj)
     project_env = _load_dotenv_vars(path)
@@ -908,121 +269,86 @@ def intelligent_service_start(proj, voice, ear, instances=None):
             "install_fingerprint": _install_fingerprint(path, profile),
         })
 
-        subprocess.run(f'"{PM2_EXECUTABLE}" delete {pm2_name}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        ok, retry_message = _start_pm2_entry(pm2_name, path, entry_command, extra_env=project_env)
-        return ok, retry_message
+        _pm2_delete_quiet(pm2_name)
+        return _start_pm2_entry(pm2_name, path, entry_command, extra_env=project_env)
 
     if "custom_start" in proj:
         code, output = _run_command_with_output(proj["custom_start"], path, extra_env=project_env)
         if code != 0:
-            update_runtime_state(pm2_name, {
-                "last_error_stage": "start",
-                "last_error": output[-1200:] or f"Custom start command exited with code {code}.",
-                "last_error_at": int(time.time()),
-            })
+            _record_runtime_error(pm2_name, "start", output[-1200:] or f"Custom start command exited with code {code}.")
             return False
         return True
+
+    def _start_entry(entry, description):
+        start_command = f'"{PM2_EXECUTABLE}" start {entry} --name "{pm2_name}" --update-env{instance_args}'
+        ok, start_message = _start_pm2_entry(pm2_name, path, start_command, extra_env=project_env)
+        if ok:
+            return True
+        ok, retry_message = _retry_install_then_start(start_command, start_message)
+        if ok:
+            return True
+        _record_runtime_error(
+            pm2_name,
+            "start",
+            (retry_message if retry_message else start_message) or f"PM2 failed to start {description}.",
+        )
+        return False
 
     runtime_entry = str(profile.get("runtime_entry") or "").strip()
-    entry_on_disk = os.path.join(path, runtime_entry) if runtime_entry else ""
+    if runtime_entry and os.path.exists(os.path.join(path, runtime_entry)):
+        return _start_entry(f'"{runtime_entry}"', f"runtime entry '{runtime_entry}'")
 
-    if runtime_entry and os.path.exists(entry_on_disk):
-        start_command = f'"{PM2_EXECUTABLE}" start "{runtime_entry}" --name "{pm2_name}" --update-env{instance_args}'
-        ok, start_message = _start_pm2_entry(pm2_name, path, start_command, extra_env=project_env)
-        if not ok:
-            ok, retry_message = _retry_install_then_start(start_command, start_message)
-            if ok:
-                return True
-            update_runtime_state(pm2_name, {
-                "last_error_stage": "start",
-                "last_error": (retry_message if retry_message else start_message) or f"PM2 failed to start runtime entry '{runtime_entry}'.",
-                "last_error_at": int(time.time()),
-            })
-            return False
-        return True
+    if os.path.exists(os.path.join(path, "dist", "main.js")):
+        return _start_entry("dist/main.js", "fallback entry 'dist/main.js'")
 
-    fallback_entry = os.path.join(path, "dist", "main.js")
-    if os.path.exists(fallback_entry):
-        start_command = f'"{PM2_EXECUTABLE}" start dist/main.js --name "{pm2_name}" --update-env{instance_args}'
-        ok, start_message = _start_pm2_entry(pm2_name, path, start_command, extra_env=project_env)
-        if not ok:
-            ok, retry_message = _retry_install_then_start(start_command, start_message)
-            if ok:
-                return True
-            update_runtime_state(pm2_name, {
-                "last_error_stage": "start",
-                "last_error": (retry_message if retry_message else start_message) or "PM2 failed to start fallback entry 'dist/main.js'.",
-                "last_error_at": int(time.time()),
-            })
-            return False
-        return True
-
-    update_runtime_state(pm2_name, {
-        "last_error_stage": "start",
-        "last_error": "Runtime entry not found after preparation.",
-        "last_error_at": int(time.time()),
-    })
+    _record_runtime_error(pm2_name, "start", "Runtime entry not found after preparation.")
     broadcast(voice, f"Cannot start {proj['friendly_name']}: runtime entry is missing.", color="text-red-400", speak=True)
     return False
 
 
-def _delete_pm2_service(pm2_name, delete_logs=False):
-    log_paths = set()
-    if delete_logs:
-        env = os.environ.copy()
-        env['NODE_NO_WARNINGS'] = '1'
-        try:
-            result = subprocess.run(
-                [PM2_EXECUTABLE, 'jlist'], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, env=env, timeout=10,
-            )
-        except (OSError, subprocess.SubprocessError):
-            return False, 'Unable to read PM2 log paths; service was not removed.'
-        processes = None
-        if result.returncode == 0:
-            for line in reversed(result.stdout.strip().splitlines()):
-                try:
-                    candidate = json.loads(line)
-                except ValueError:
-                    continue
-                if isinstance(candidate, list):
-                    processes = candidate
-                    break
-        if processes is None:
-            return False, 'Unable to read PM2 log paths; service was not removed.'
-        for proc in processes:
-            if str(proc.get('name') or '').lower() != str(pm2_name).lower():
-                continue
-            pm2_env = proc.get('pm2_env') or {}
-            for field in ('pm_out_log_path', 'pm_err_log_path', 'pm_log_path'):
-                path = pm2_env.get(field)
-                if path and os.path.isabs(path):
-                    log_paths.add(os.path.abspath(path))
-
-    try:
-        command = subprocess.list2cmdline([PM2_EXECUTABLE, 'delete', pm2_name])
-        result = subprocess.run(command, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except OSError:
-        return False, 'Unable to execute PM2 delete.'
-    if result.returncode != 0:
-        return False, 'PM2 could not remove the service; its logs were kept.'
-
-    failed_paths = []
-    for path in log_paths:
-        try:
-            if os.path.isfile(path):
-                os.unlink(path)
-        except OSError:
-            failed_paths.append(path)
-    if failed_paths:
-        return True, f'Service removed, but {len(failed_paths)} log file(s) could not be deleted.'
-    return True, 'Service removed and selected log files deleted.' if delete_logs else 'Service removed; log files were kept.'
-
 # =====================================================================
 # DECOUPLED CONVERSATIONAL COMMAND PROCESSOR
 # =====================================================================
+def _apply_sys_setting(raw_command_stripped, voice, ear):
+    """Handle a ``sys_setting:key:value`` command. Returns a result dict, or None if malformed."""
+    parts = raw_command_stripped.split(":", 2)
+    if len(parts) != 3:
+        return None
+
+    key, raw_val = parts[1].lower(), parts[2]
+    key = SETTINGS_ALIASES.get(key, key)
+    if key not in SETTINGS_SCHEMA:
+        return {"type": "sys_setting", "key": key, "changed": False, "ignored": True}
+
+    val = _coerce_setting_value(key, raw_val)
+    settings = _load_settings_file()
+    old_val = settings.get(key)
+    settings[key] = val
+
+    # Persist only when a real change happened.
+    changed = old_val != val
+    if changed:
+        _persist_settings_file(settings)
+
+    if key in ["engine", "mic", "speaker"]:
+        if settings["engine"] == "browser":
+            voice.muted = True
+            if ear: ear.mic_enabled = False
+        else:
+            voice.muted = not settings["speaker"]
+            if ear: ear.mic_enabled = settings["mic"]
+    return {"type": "sys_setting", "key": key, "changed": changed}
+
+
+def _online_virtual_amrs():
+    processes = pm2_cli.fetch_pm2_processes() or []
+    return [
+        p.get("name") for p in processes
+        if p.get("name", "").startswith("amr-service-") and p.get("pm2_env", {}).get("status") == "online"
+    ]
+
+
 def process_command(raw_command, voice, ear=None, tenant_id=None):
-    global active_conversation_queue
     from assistant.services.pm2_manager import parse_delete_logs, parse_start_instances
 
     try:
@@ -1032,9 +358,8 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
         return {"type": "start_result", "target": "", "ok": False, "message": str(error)}
     raw_command_stripped = raw_command.strip()
     command = raw_command_stripped.lower()
-    
-    if active_conversation_queue is not None:
-        active_conversation_queue.put(command)
+
+    if submit_reply(command):
         return
 
     raw_parts = raw_command.strip().split()
@@ -1048,36 +373,13 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
     ]
 
     if raw_command_stripped.lower().startswith("sys_setting:"):
-        parts = raw_command_stripped.split(":", 2)
-        if len(parts) == 3:
-            key, raw_val = parts[1], parts[2]
-            key = key.lower()
-            key = SETTINGS_ALIASES.get(key, key)
-            if key not in SETTINGS_SCHEMA:
-                return {"type": "sys_setting", "key": key, "changed": False, "ignored": True}
-
-            val = _coerce_setting_value(key, raw_val)
-            settings = _load_settings_file()
-            old_val = settings.get(key)
-            settings[key] = val
-
-            # Persist only when a real change happened.
-            changed = old_val != val
-            if old_val != val:
-                _persist_settings_file(settings)
-
-            if key in ["engine", "mic", "speaker"]:
-                if settings["engine"] == "browser":
-                    voice.muted = True
-                    if ear: ear.mic_enabled = False
-                else:
-                    voice.muted = not settings["speaker"]
-                    if ear: ear.mic_enabled = settings["mic"]
-            return {"type": "sys_setting", "key": key, "changed": changed}
+        setting_result = _apply_sys_setting(raw_command_stripped, voice, ear)
+        if setting_result is not None:
+            return setting_result
 
     command = re.sub(r'\ba\s*[\s\.]*\s*u\s*[\s\.]*\s*t\s*[\s\.]*\s*h\b', 'auth', command)
     for phrase in ["hot service", "earth service", "authentication", "out service", "art service", "aught service", "hot logs", "earth logs"]:
-        if phrase in command: 
+        if phrase in command:
             command = command.replace(phrase, "auth")
 
     ui_parts = command.split()
@@ -1104,27 +406,27 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
         broadcast(voice, "Fetching detailed infrastructure telemetry.", speak=True, wait=True)
         display_advanced_status(voice)
         return
-        
+
     elif "start all" in command or "boot all" in command or "start all services" in command:
         broadcast(voice, "Initializing all project-specific background services.", color="text-emerald-400", speak=True)
         for proj in command_projects:
             intelligent_service_start(proj, voice, ear, instances=instances)
         return
-        
+
     elif "stop all" in command or "shutdown services" in command or "stop all services" in command:
         if require_confirmation(voice, ear, "stop", "all infrastructure services", is_ui_exact=False):
             broadcast(voice, "Halting project-specific background services.", color="text-amber-400", speak=True)
             for proj in command_projects:
                 subprocess.run(f'"{PM2_EXECUTABLE}" stop {proj["name"]}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
-        
+
     elif "delete all" in command or "remove all" in command:
         if require_confirmation(voice, ear, "delete", "all infrastructure services", is_ui_exact=False):
             broadcast(voice, "Purging project-specific services from the P M 2 registry.", color="text-red-400", speak=True)
             for proj in command_projects:
                 subprocess.run(f'"{PM2_EXECUTABLE}" delete {proj["name"]}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return
-        
+
     elif "exit" in command or "quit" in command:
         broadcast(voice, "Terminating control systems.", speak=True)
         raise KeyboardInterrupt
@@ -1135,15 +437,14 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
             if proj["name"] in command or proj["friendly_name"].lower() in command:
                 matched_target = proj["name"]
                 break
-        
+
         if not matched_target:
             amr_match = re.search(r'\b(amr-service-\d+)\b', command)
             if amr_match: matched_target = amr_match.group(1)
 
         if matched_target:
             broadcast(voice, f"Opening live logs for {matched_target}.", speak=True)
-            if 'web_server' in globals() or 'web_server' in sys.modules:
-                web_server.socketio.emit('log_stream_intent', {'service': matched_target})
+            emit_event('log_stream_intent', {'service': matched_target})
         else:
             response = ask_question(voice, ear, "Sure, which service would you like to fetch logs for? Please confirm the process name.")
             if response and not any(w in response.lower() for w in ["cancel", "abort", "nevermind", "nothing"]):
@@ -1155,25 +456,8 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
             broadcast(voice, "All core services will be restarted.", speak=True)
             for proj in command_projects:
                 subprocess.run(f'"{PM2_EXECUTABLE}" restart {proj["name"]}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                
-            try:
-                env = os.environ.copy()
-                env["NODE_NO_WARNINGS"] = "1"
-                result = subprocess.run([PM2_EXECUTABLE, 'jlist'], stdout=subprocess.PIPE, text=True, env=env)
-                processes = []
-                if result.returncode == 0 and result.stdout.strip():
-                    # ULTIMATE SHIELD for restart all amrs
-                    for line in reversed(result.stdout.strip().split('\n')):
-                        line = line.strip()
-                        if line.startswith('[') and line.endswith(']'):
-                            try:
-                                processes = json.loads(line)
-                                break
-                            except Exception:
-                                continue
-                online_amrs = [p.get("name") for p in processes if p.get("name", "").startswith("amr-service-") and p.get("pm2_env", {}).get("status") == "online"]
-            except Exception: online_amrs = []
-                
+
+            online_amrs = _online_virtual_amrs()
             if online_amrs:
                 response = ask_question(voice, ear, "Would you also like to restart the online Virtual AMRs?")
                 if response and any(w in response.lower() for w in ["yes", "sure", "restart", "do it", "okay", "yep"]):
@@ -1216,7 +500,7 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
             if action_intent in ["stop", "delete", "flush", "restart"]:
                 if not require_confirmation(voice, ear, action_intent, target, is_ui_exact):
                     return
-            
+
             if action_intent == "start":
                 if matched_proj:
                     started = intelligent_service_start(matched_proj, voice, ear, instances=instances)
@@ -1254,7 +538,7 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
                     broadcast(voice, message, color="text-emerald-400" if deleted else "text-red-400", speak=False)
                 else:
                     subprocess.run(f'"{PM2_EXECUTABLE}" {action_intent} {target}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                
+
         else:
             response = ask_question(voice, ear, f"Which service would you like to {action_intent}?")
             if response and not any(w in response.lower() for w in ["cancel", "abort", "nothing"]):
@@ -1270,6 +554,7 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
     else:
         broadcast(voice, "I didn't recognize that command. Can you rephrase it or tell me what you'd like to do?", color="text-amber-400 font-bold", speak=True)
 
+
 # =====================================================================
 # STANDBY LOOP
 # =====================================================================
@@ -1278,14 +563,14 @@ def run_standby_loop(voice, ear):
     print("[SYSTEM]: Standby Mode Active. Listening for instructions...")
     print("Available Commands: 'status', 'start all', 'start [name]', 'restart [name]', 'stop [name]', 'delete [name]', 'stop all', 'disable mic', 'mute', 'exit'")
     print("========================================================\n")
-    
+
     try:
         while True:
             raw_command = ear.get_command()
             if not raw_command: continue
-            
+
             process_command(raw_command, voice, ear)
-                
+
     except KeyboardInterrupt:
         print("\n[SYSTEM]: Interrupted by user. Terminating engine components cleanly...")
         broadcast(voice, "Shutting down core engine components.", speak=True)

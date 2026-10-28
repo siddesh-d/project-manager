@@ -8,7 +8,9 @@ import shutil
 from assistant.services.voice import JarvisVoiceEngine
 from assistant.services.ear import JarvisMultimodalEar
 # FIXED: Imported `broadcast` so main.py can stream logs to the UI during pre-flight checks
-from assistant.core.command_center import display_advanced_status, process_command, broadcast, _load_settings_file
+from assistant.core import conversation
+from assistant.core.command_center import display_advanced_status, process_command, broadcast
+from assistant.core.settings_store import load_settings as _load_settings_file
 from assistant.config import (
     get_port_from_env,
     SETTINGS_FILE,
@@ -28,7 +30,7 @@ from assistant.registry.projects import get_projects
 from assistant.services import web_server
 from assistant.core import boot_sequence
 from assistant.services import pm2_manager
-
+from assistant.services import pm2_cli
 def handle_ui_command_routing(command_text, tenant_id=None):
     """Routes commands arriving via the web input straight into the core processor."""
     return process_command(command_text, voice_engine, ear_engine, tenant_id=tenant_id)
@@ -37,23 +39,8 @@ def live_telemetry_loop():
     """Polls real active PM2 numbers directly from the OS and pushes to the web dashboard."""
     while True:
         try:
-            env = os.environ.copy()
-            env["NODE_NO_WARNINGS"] = "1"
-            result = subprocess.run([PM2_EXECUTABLE, 'jlist'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-            if result.returncode == 0:
-                output = result.stdout.strip()
-                processes = []
-                
-                # ULTIMATE SHIELD: Ignore PM2 update nags
-                for line in reversed(output.split('\n')):
-                    line = line.strip()
-                    if line.startswith('[') and line.endswith(']'):
-                        try:
-                            processes = json.loads(line)
-                            break
-                        except Exception:
-                            continue
-                
+            processes = pm2_cli.fetch_pm2_processes()
+            if processes is not None:
                 metrics = []
                 seen_core_services = set()
                 
@@ -211,6 +198,9 @@ def run():
         ear_engine.mic_enabled = settings.get("mic", False)
         print("[SYSTEM]: Booting in LEGACY Hardware Voice Mode.")
 
+    # Composition root: connect the core's UI sinks to the web layer.
+    conversation.set_log_sink(web_server.stream_log_to_ui)
+    conversation.set_event_sink(web_server.socketio.emit)
     web_server._ui_command_callback = handle_ui_command_routing
 
     init_thread = threading.Thread(

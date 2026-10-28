@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from assistant.core.command_center import _load_settings_file, _persist_settings_file
+from assistant.core.settings_store import load_settings as _load_settings_file, persist_settings as _persist_settings_file
 
 
 class TestPersistSettingsKeepsPm2(unittest.TestCase):
