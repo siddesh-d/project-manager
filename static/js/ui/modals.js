@@ -76,7 +76,7 @@ document.addEventListener('keydown', event => {
 window.promptRemoveService = function (serviceName) {
   window.AppState.serviceToRemove = serviceName;
   const deleteLogs = document.getElementById('remove-delete-logs');
-  if (deleteLogs) deleteLogs.checked = false;
+  if (deleteLogs) deleteLogs.checked = true;
   const target = document.getElementById('remove-target-name');
   if (target) target.textContent = serviceName;
   document.getElementById('remove-modal')?.classList.remove('hidden');
@@ -85,7 +85,7 @@ window.promptRemoveService = function (serviceName) {
 window.closeRemoveModal = function () {
   window.AppState.serviceToRemove = null;
   const deleteLogs = document.getElementById('remove-delete-logs');
-  if (deleteLogs) deleteLogs.checked = false;
+  if (deleteLogs) deleteLogs.checked = true;
   document.getElementById('remove-modal')?.classList.add('hidden');
 };
 
