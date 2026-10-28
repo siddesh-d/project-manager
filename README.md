@@ -14,7 +14,14 @@ assistant/
                pm2_manager = monitoring), project_runtime
                (install/build/env prep), voice, file operations
   auth.py      users, tenants, roles
-static/        frontend JS/CSS
+static/        frontend assets
+  css/         styles
+  js/          store, main, voice (app state and bootstrap)
+  js/shared/   shared helpers (fetchApi)
+  js/ui/       UI modules: core, modals, panels, access, tenants,
+               projects, file-editor, project-forms,
+               folder-navigator, widgets, services
+               (classic scripts; load order set in templates/index.html)
 templates/     HTML templates
 tests/         unittest suite
 docs/          project notes
