@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from assistant.auth import ensure_default_admin_user, verify_user, get_user_store_path, normalize_role_name
+from assistant.config.settings import DEFAULT_ADMIN_PASSWORD
 
 
 class TestAdminAuth(unittest.TestCase):
@@ -21,7 +22,7 @@ class TestAdminAuth(unittest.TestCase):
                 self.assertEqual(admin["role"], "platform_admin")
                 self.assertNotEqual(admin.get("password"), "admin")
                 self.assertIn("password_hash", admin)
-                self.assertTrue(verify_user("admin", "admin"))
+                self.assertTrue(verify_user("admin", DEFAULT_ADMIN_PASSWORD))
                 self.assertFalse(verify_user("admin", "wrong-pass"))
                 self.assertTrue(Path(get_user_store_path("admin")).exists() or Path(os.environ["USERS_FILE"]).exists())
             finally:

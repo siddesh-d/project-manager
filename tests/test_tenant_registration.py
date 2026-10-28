@@ -16,6 +16,7 @@ from assistant.auth import (
     user_has_permission,
 )
 from assistant.services import web_server
+from assistant.config.settings import DEFAULT_ADMIN_PASSWORD
 
 
 @contextmanager
@@ -118,7 +119,7 @@ class TestTenantRegistration(unittest.TestCase):
             from assistant.services.web_server import app
             app.config["TESTING"] = True
             client = app.test_client()
-            login = client.post("/api/login", json={"username": "admin", "password": "admin"})
+            login = client.post("/api/login",             json={"username": "admin", "password": DEFAULT_ADMIN_PASSWORD})
             self.assertEqual(login.status_code, 200)
 
             list_response = client.get("/api/tenants")

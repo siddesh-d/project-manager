@@ -1,6 +1,7 @@
 import unittest
 
 from assistant.services.web_server import app
+from assistant.config.settings import DEFAULT_ADMIN_PASSWORD
 
 
 class TestSessionFlow(unittest.TestCase):
@@ -11,7 +12,7 @@ class TestSessionFlow(unittest.TestCase):
     def test_login_and_logout_session_flow(self):
         login_response = self.client.post(
             '/api/login',
-            json={'username': 'admin', 'password': 'admin'}
+            json={'username': 'admin', 'password': DEFAULT_ADMIN_PASSWORD}
         )
         self.assertEqual(login_response.status_code, 200)
         payload = login_response.get_json()
