@@ -7,11 +7,15 @@ from unittest.mock import Mock, patch
 
 from assistant.core import command_center
 from assistant.services import web_server
-from assistant.services.pm2_manager import parse_delete_logs
+from assistant.services.pm2_manager import parse_delete_logs, parse_keep_logs
 
 
 class TestRemoveLogs(unittest.TestCase):
     def test_delete_logs_option_is_opt_in_and_strictly_parsed(self):
+        self.assertEqual(parse_keep_logs('delete mqtt keep logs'), ('delete mqtt', True))
+        self.assertEqual(parse_keep_logs('remove all and keep the logs'), ('remove all', True))
+        self.assertEqual(parse_keep_logs('delete mqtt --keep-logs'), ('delete mqtt', True))
+        self.assertEqual(parse_keep_logs('delete mqtt'), ('delete mqtt', False))
         self.assertEqual(parse_delete_logs('delete mqtt'), ('delete mqtt', False))
         self.assertEqual(parse_delete_logs('delete mqtt --delete-logs'), ('delete mqtt', True))
         self.assertEqual(parse_delete_logs('remove mqtt --delete-logs'), ('remove mqtt', True))
@@ -85,14 +89,25 @@ class TestRemoveLogs(unittest.TestCase):
             command_center.process_command('delete mqtt --delete-logs', Mock())
         delete.assert_called_once_with('mqtt', delete_logs=True)
 
-    def test_delete_logs_option_rejects_bulk_deletion(self):
-        with patch.object(command_center, 'resolve_pm2_target') as resolve, patch.object(
-            command_center, 'require_confirmation'
-        ) as confirm:
-            result = command_center.process_command('delete all --delete-logs', Mock())
-        self.assertFalse(result['ok'])
-        resolve.assert_not_called()
-        confirm.assert_not_called()
+    def test_delete_removes_logs_by_default_including_bulk_and_honors_keep_logs(self):
+        projects = [{'name': 'a', 'friendly_name': 'A'}, {'name': 'b', 'friendly_name': 'B'}]
+        for command, expected in [('remove all', True), ('remove all keep logs', False)]:
+            with self.subTest(command=command), patch.object(command_center, 'get_projects', return_value=projects), \
+                    patch.object(command_center, 'require_confirmation', return_value=True), \
+                    patch.object(command_center, '_delete_pm2_service', return_value=(True, 'ok')) as delete, \
+                    patch.object(command_center, 'broadcast'):
+                command_center.process_command(command, Mock())
+            self.assertEqual([c.args[0] for c in delete.call_args_list], ['a', 'b'])
+            self.assertTrue(all(c.kwargs['delete_logs'] is expected for c in delete.call_args_list))
+
+        with patch.object(command_center, 'resolve_pm2_target', return_value='mqtt'), patch.object(
+            command_center, 'require_confirmation', return_value=True
+        ), patch.object(command_center, '_delete_pm2_service', return_value=(True, 'removed')) as delete, patch.object(
+            command_center, 'broadcast'
+        ):
+            command_center.process_command('delete mqtt', Mock())
+            command_center.process_command('delete mqtt --keep-logs', Mock())
+        self.assertEqual([c.kwargs['delete_logs'] for c in delete.call_args_list], [True, False])
 
 
 if __name__ == '__main__':

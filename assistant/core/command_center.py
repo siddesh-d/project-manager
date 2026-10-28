@@ -349,13 +349,18 @@ def _online_virtual_amrs():
 
 
 def process_command(raw_command, voice, ear=None, tenant_id=None):
-    from assistant.services.pm2_manager import parse_delete_logs, parse_start_instances
+    from assistant.services.pm2_manager import parse_delete_logs, parse_keep_logs, parse_start_instances
 
     try:
-        raw_command, delete_logs = parse_delete_logs(raw_command)
+        raw_command, keep_logs = parse_keep_logs(raw_command)
+        raw_command, explicit_delete_logs = parse_delete_logs(raw_command)
+        if keep_logs and explicit_delete_logs:
+            raise ValueError('Use either --delete-logs or keep logs, not both.')
         raw_command, instances = parse_start_instances(raw_command)
     except ValueError as error:
         return {"type": "start_result", "target": "", "ok": False, "message": str(error)}
+    # Removing a service also removes its logs unless the user asked to keep them.
+    delete_logs = not keep_logs
     raw_command_stripped = raw_command.strip()
     command = raw_command_stripped.lower()
 
@@ -363,10 +368,6 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
         return
 
     raw_parts = raw_command.strip().split()
-    if delete_logs and (len(raw_parts) != 2 or raw_parts[0].lower() not in {'delete', 'remove'}
-                        or raw_parts[1].lower() in {'all', 'all services'}):
-        return {"type": "command_result", "target": "", "ok": False,
-                "message": "Log deletion must target one PM2 service at a time."}
     command_projects = [
         project for project in get_projects()
         if tenant_id is None or str(project.get('tenant_id') or '').strip() == str(tenant_id).strip()
@@ -424,7 +425,9 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
         if require_confirmation(voice, ear, "delete", "all infrastructure services", is_ui_exact=False):
             broadcast(voice, "Purging project-specific services from the P M 2 registry.", color="text-red-400", speak=True)
             for proj in command_projects:
-                subprocess.run(f'"{PM2_EXECUTABLE}" delete {proj["name"]}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                deleted, message = _delete_pm2_service(proj["name"], delete_logs=delete_logs)
+                if not deleted:
+                    broadcast(voice, message, color="text-red-400", speak=False)
         return
 
     elif "exit" in command or "quit" in command:

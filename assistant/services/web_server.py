@@ -334,7 +334,7 @@ def _filter_pm2_services_for_user(services, user=None):
     return filtered
 
 
-def _run_bulk_project_action_for_user(user, action, command_callback, instances=None):
+def _run_bulk_project_action_for_user(user, action, command_callback, instances=None, keep_logs=False):
     if not _user_can_manage_projects(user):
         return {'ok': False, 'error': 'Permission denied.', 'results': []}
     if not callable(command_callback):
@@ -347,7 +347,8 @@ def _run_bulk_project_action_for_user(user, action, command_callback, instances=
         if not project_name:
             continue
         instance_args = f' --instances {instances}' if instances is not None else ''
-        callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}{instance_args}', user)
+        keep_log_args = ' --keep-logs' if keep_logs and action == 'delete' else ''
+        callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}{instance_args}{keep_log_args}', user)
         results.append({
             'name': project_name,
             'ok': not isinstance(callback_result, dict) or bool(callback_result.get('ok', True)),
@@ -371,9 +372,10 @@ def _invoke_command_callback(command_callback, command_text, user):
 
 
 def _authorize_tenant_ui_command(user, command_text, command_callback):
-    from assistant.services.pm2_manager import parse_delete_logs, parse_start_instances
+    from assistant.services.pm2_manager import parse_delete_logs, parse_keep_logs, parse_start_instances
 
     try:
+        command_text, keep_logs = parse_keep_logs(command_text)
         command_text, delete_logs = parse_delete_logs(command_text)
         command_text, instances = parse_start_instances(command_text)
     except ValueError as error:
@@ -390,11 +392,9 @@ def _authorize_tenant_ui_command(user, command_text, command_callback):
         return {'ok': False, 'error': 'Command is not available to tenant users.'}
 
     if target.lower() in {'all', 'all services'}:
-        if delete_logs:
-            return {'ok': False, 'error': 'Log deletion must target one service at a time.'}
         if action == 'log':
             return {'ok': False, 'error': 'Bulk log access is not allowed.'}
-        return _run_bulk_project_action_for_user(user, action, command_callback, instances=instances)
+        return _run_bulk_project_action_for_user(user, action, command_callback, instances=instances, keep_logs=keep_logs)
 
     project = _get_project_for_user(target, user, require_manage=True)
     if not project:
@@ -408,6 +408,8 @@ def _authorize_tenant_ui_command(user, command_text, command_callback):
         return {'ok': False, 'error': 'Command processor is unavailable.'}
     instance_args = f' --instances {instances}' if instances is not None else ''
     delete_log_args = ' --delete-logs' if delete_logs else ''
+    if keep_logs and action == 'delete':
+        delete_log_args = ' --keep-logs'
     callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}{instance_args}{delete_log_args}', user)
     return {'ok': not isinstance(callback_result, dict) or bool(callback_result.get('ok', True)), 'results': [{'name': project_name, 'result': callback_result}]}
 
@@ -1615,11 +1617,8 @@ def handle_incoming_ui_command(data):
                     'ok': bool(callback_result.get('ok')),
                     'message': callback_result.get('message', ''),
                 })
-        stream_log_to_ui(
-            "UI-OVERRIDE",
-            f"Tenant-scoped command {'executed' if command_result.get('ok') else 'denied'}.",
-            "text-amber-400",
-        )
+        if not command_result.get('ok'):
+            stream_log_to_ui("UI-OVERRIDE", "Tenant-scoped command denied.", "text-amber-400")
         return command_result
 
     callback_result = None
@@ -1638,8 +1637,6 @@ def handle_incoming_ui_command(data):
             'message': callback_result.get('message', ''),
         })
         return
-
-    stream_log_to_ui("UI-OVERRIDE", f"Executing text input: {command_text}", "text-amber-400")
 
 # =====================================================================
 # PROJECT REGISTRY MANAGEMENT (JSON-BACKED)

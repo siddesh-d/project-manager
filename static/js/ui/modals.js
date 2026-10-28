@@ -91,9 +91,8 @@ window.closeRemoveModal = function () {
 
 window.confirmRemoveService = function () {
   if (window.AppState.serviceToRemove && window.AppState.socket) {
-    window.logToTerminal('UI_OVERRIDE', `Initiating REMOVE sequence for ${window.AppState.serviceToRemove}`, 'text-red-500 font-bold');
     const deleteLogs = document.getElementById('remove-delete-logs')?.checked;
-    const deleteLogOption = deleteLogs ? ' --delete-logs' : '';
+    const deleteLogOption = deleteLogs ? ' --delete-logs' : ' --keep-logs';
     window.AppState.socket.emit('ui_command', { command: `delete ${window.AppState.serviceToRemove}${deleteLogOption}` });
     window.closeRemoveModal();
   }
