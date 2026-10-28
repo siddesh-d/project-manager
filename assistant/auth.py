@@ -91,19 +91,19 @@ def _slugify(value):
 
 
 def _get_users_file():
-    return Path(os.getenv("JARVIS_USERS_FILE", str(DEFAULT_USERS_FILE)))
+    return Path(os.getenv("USERS_FILE", str(DEFAULT_USERS_FILE)))
 
 
 def _get_user_config_dir():
-    return Path(os.getenv("JARVIS_USER_CONFIG_DIR", str(DEFAULT_USER_CONFIG_DIR)))
+    return Path(os.getenv("USER_CONFIG_DIR", str(DEFAULT_USER_CONFIG_DIR)))
 
 
 def _get_tenants_file():
-    return Path(os.getenv("JARVIS_TENANTS_FILE", str(DEFAULT_TENANTS_FILE)))
+    return Path(os.getenv("TENANTS_FILE", str(DEFAULT_TENANTS_FILE)))
 
 
 def _get_tenant_config_dir():
-    return Path(os.getenv("JARVIS_TENANT_CONFIG_DIR", str(DEFAULT_TENANT_CONFIG_DIR)))
+    return Path(os.getenv("TENANT_CONFIG_DIR", str(DEFAULT_TENANT_CONFIG_DIR)))
 
 
 def get_user_store_path(user_id=None):
@@ -291,7 +291,7 @@ def ensure_default_admin_user():
             shutil.copyfile(example, users_file)
         print(
             f"[setup] {users_file.name} not found - created a new one from the template.\n"
-            f"        Default admin user is '{DEFAULT_ADMIN_USERNAME}'. Set JARVIS_ADMIN_PASSWORD "
+            f"        Default admin user is '{DEFAULT_ADMIN_USERNAME}'. Set ADMIN_PASSWORD "
             "(e.g. in .env) before first run to choose its password, and change it after login."
         )
     store = load_user_store()

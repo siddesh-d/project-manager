@@ -372,7 +372,7 @@ def _build_command_env(extra_env=None):
         seen.add(key)
         merged_paths.append(seg)
 
-    extra_bin_path = str(os.getenv("JARVIS_EXTRA_BIN_PATH") or "").strip()
+    extra_bin_path = str(os.getenv("EXTRA_BIN_PATH") or "").strip()
     if extra_bin_path:
         for segment in extra_bin_path.split(os.pathsep):
             seg = str(segment or "").strip()
@@ -464,7 +464,7 @@ def _prepare_install_command(install_command, project_type, project_path, extra_
                     f"{lowered} is not installed or not available in PATH. "
                     f"Install Node.js tooling ({lowered}) and retry. "
                     f"If launching with sudo, ensure PATH includes standard binary folders "
-                    f"or set JARVIS_EXTRA_BIN_PATH."
+                    f"                    or set EXTRA_BIN_PATH."
                 )
             return None, f"Required command '{executable_token}' is not available in PATH."
         command_list[0] = resolved
@@ -486,7 +486,7 @@ def _prepare_install_command(install_command, project_type, project_path, extra_
                     f"{lowered} is not installed or not available in PATH. "
                     f"Install Node.js tooling ({lowered}) and retry. "
                     f"If launching with sudo, ensure PATH includes standard binary folders "
-                    f"or set JARVIS_EXTRA_BIN_PATH."
+                    f"or set EXTRA_BIN_PATH."
                 )
 
     if project_type == "node" and not os.path.exists(os.path.join(project_path, "package.json")):

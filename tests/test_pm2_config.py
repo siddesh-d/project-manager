@@ -29,12 +29,12 @@ class TestPm2ConfigExternalization(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            original_settings_file = os.environ.get("JARVIS_SETTINGS_FILE")
-            original_refresh_seconds = os.environ.get("JARVIS_PM2_REFRESH_SECONDS")
-            original_user_flag = os.environ.get("JARVIS_PM2_SHOW_USER")
-            os.environ["JARVIS_SETTINGS_FILE"] = str(settings_path)
-            os.environ["JARVIS_PM2_REFRESH_SECONDS"] = "12"
-            os.environ["JARVIS_PM2_SHOW_USER"] = "true"
+            original_settings_file = os.environ.get("SETTINGS_FILE")
+            original_refresh_seconds = os.environ.get("PM2_REFRESH_SECONDS")
+            original_user_flag = os.environ.get("PM2_SHOW_USER")
+            os.environ["SETTINGS_FILE"] = str(settings_path)
+            os.environ["PM2_REFRESH_SECONDS"] = "12"
+            os.environ["PM2_SHOW_USER"] = "true"
 
             try:
                 for module_name in ["assistant.config.settings", "assistant.config"]:
@@ -49,19 +49,19 @@ class TestPm2ConfigExternalization(unittest.TestCase):
                 self.assertIn("pm2", settings_module.PM2_CONFIG)
             finally:
                 if original_settings_file is None:
-                    os.environ.pop("JARVIS_SETTINGS_FILE", None)
+                    os.environ.pop("SETTINGS_FILE", None)
                 else:
-                    os.environ["JARVIS_SETTINGS_FILE"] = original_settings_file
+                    os.environ["SETTINGS_FILE"] = original_settings_file
 
                 if original_refresh_seconds is None:
-                    os.environ.pop("JARVIS_PM2_REFRESH_SECONDS", None)
+                    os.environ.pop("PM2_REFRESH_SECONDS", None)
                 else:
-                    os.environ["JARVIS_PM2_REFRESH_SECONDS"] = original_refresh_seconds
+                    os.environ["PM2_REFRESH_SECONDS"] = original_refresh_seconds
 
                 if original_user_flag is None:
-                    os.environ.pop("JARVIS_PM2_SHOW_USER", None)
+                    os.environ.pop("PM2_SHOW_USER", None)
                 else:
-                    os.environ["JARVIS_PM2_SHOW_USER"] = original_user_flag
+                    os.environ["PM2_SHOW_USER"] = original_user_flag
 
 
 if __name__ == "__main__":

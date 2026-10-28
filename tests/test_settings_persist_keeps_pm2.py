@@ -30,8 +30,8 @@ class TestPersistSettingsKeepsPm2(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            original = os.environ.get("JARVIS_SETTINGS_FILE")
-            os.environ["JARVIS_SETTINGS_FILE"] = str(settings_path)
+            original = os.environ.get("SETTINGS_FILE")
+            os.environ["SETTINGS_FILE"] = str(settings_path)
 
             try:
                 settings = _load_settings_file()
@@ -45,9 +45,9 @@ class TestPersistSettingsKeepsPm2(unittest.TestCase):
                 self.assertFalse(saved["pm2"]["fields"]["user"])
             finally:
                 if original is None:
-                    os.environ.pop("JARVIS_SETTINGS_FILE", None)
+                    os.environ.pop("SETTINGS_FILE", None)
                 else:
-                    os.environ["JARVIS_SETTINGS_FILE"] = original
+                    os.environ["SETTINGS_FILE"] = original
 
 
 if __name__ == "__main__":
