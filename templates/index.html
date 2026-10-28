@@ -650,7 +650,7 @@
 
   <div id="project-file-editor-modal"
     class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel modal-panel max-w-5xl w-full border-cyan-900/80 bg-[#020617] mx-4" style="max-height: 92vh;">
+    <div class="hud-panel modal-panel modal-panel-fill max-w-5xl w-full border-cyan-900/80 bg-[#020617] mx-4">
       <div class="modal-header">
         <h3 class="text-cyan-400 font-bold tracking-[0.2em] text-sm">PROJECT FILE EDITOR: <span
             id="project-file-editor-project" class="text-cyan-300"></span></h3>
@@ -658,7 +658,7 @@
       </div>
 
       <div class="modal-body grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="md:col-span-1 flex flex-col gap-2">
+        <div class="md:col-span-1 flex flex-col gap-2 min-h-0">
           <div class="flex items-center gap-2">
             <button id="project-file-editor-up-btn" onclick="navigateProjectFileEditorUp()"
               class="btn-ui btn-ui-cyan px-3 py-1.5 text-[9px] font-bold tracking-widest" disabled>[UP]</button>
@@ -684,18 +684,18 @@
               class="btn-ui btn-ui-cyan flex-1 px-2 py-1.5 text-[9px] font-bold">UPLOAD FOLDER</button>
           </div>
           <div id="project-file-editor-list"
-            class="flex flex-col gap-1 max-h-[58vh] overflow-y-auto border border-cyan-900/40 bg-black p-2">
+            class="flex flex-col gap-1 flex-1 min-h-0 max-h-[58vh] md:max-h-none overflow-y-auto border border-cyan-900/40 bg-black p-2">
             <div class="text-cyan-800 italic text-center text-[10px] py-4">Select a project to browse files.</div>
           </div>
         </div>
 
-        <div class="md:col-span-2 flex flex-col gap-2">
+        <div class="md:col-span-2 flex flex-col gap-2 min-h-0">
           <div id="project-file-editor-current-file"
             class="bg-black border border-cyan-800 text-cyan-300 text-[9px] tracking-widest p-2 font-mono truncate">NO
             FILE
             SELECTED</div>
           <textarea id="project-file-editor-content"
-            class="w-full min-h-[52vh] bg-black border border-cyan-800 text-cyan-200 text-[11px] tracking-wide p-3 outline-none font-mono"
+            class="w-full flex-1 min-h-[40vh] md:min-h-0 resize-none bg-black border border-cyan-800 text-cyan-200 text-[11px] tracking-wide p-3 outline-none font-mono"
             spellcheck="false" placeholder="Select a file from the left panel..."></textarea>
           <div id="project-file-editor-error" class="hidden text-[9px] text-red-400 font-bold tracking-widest"></div>
           <div class="flex justify-end gap-3 pt-2 border-t border-cyan-900/40">

@@ -154,6 +154,17 @@ body {
   padding: 1rem 1.5rem 1.5rem;
 }
 
+/* Tall modal whose body fills the panel; panes scroll internally on wide screens */
+.modal-panel-fill {
+  height: 92vh;
+}
+@media (min-width: 768px) {
+  .modal-panel-fill .modal-body {
+    overflow: hidden;
+    grid-template-rows: minmax(0, 1fr);
+  }
+}
+
 /* --- HUD Panel Geometric Borders --- */
 .hud-panel {
   position: relative;
