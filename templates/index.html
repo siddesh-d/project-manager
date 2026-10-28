@@ -275,12 +275,13 @@
 
   <div id="tenant-management-modal"
     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-4xl w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">TENANT MANAGEMENT</h3>
+    <div class="hud-panel modal-panel max-w-4xl w-full border-cyan-900/80 bg-[#020617] mx-4">
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm">TENANT MANAGEMENT</h3>
         <button onclick="document.getElementById('tenant-management-modal').classList.add('hidden')"
           class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
+      <div class="modal-body">
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="space-y-3">
@@ -298,18 +299,19 @@
           <div id="tenant-user-list" class="space-y-2"></div>
         </div>
       </div>
+      </div>
     </div>
   </div>
 
   <div id="tenant-registration-modal"
     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">TENANT REGISTRATION</h3>
+    <div class="hud-panel modal-panel max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4">
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm">TENANT REGISTRATION</h3>
         <button onclick="closeTenantRegistrationModal()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
 
-      <div class="flex flex-col gap-3">
+      <div class="modal-body flex flex-col gap-3">
         <div class="flex flex-col gap-1">
           <label class="text-[9px] text-cyan-600 tracking-widest">TENANT NAME</label>
           <input id="tenant-name" type="text" placeholder="Acme Labs"
@@ -352,13 +354,14 @@
 
   <div id="settings-modal"
     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
+    <div class="hud-panel modal-panel max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4">
 
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">SYSTEM PREFERENCES</h3>
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm">SYSTEM PREFERENCES</h3>
         <button onclick="toggleSettingsModal()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
 
+      <div class="modal-body">
       <div class="flex flex-col gap-3 mb-6">
 
         <div class="flex justify-between items-center bg-cyan-950/20 p-3 border border-cyan-900/40">
@@ -443,18 +446,20 @@
           & CLOSE</button>
       </div>
 
+      </div>
     </div>
   </div>
 
   <div id="projects-modal"
     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-2xl w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
+    <div class="hud-panel modal-panel max-w-2xl w-full border-cyan-900/80 bg-[#020617] mx-4">
 
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">PROJECT REGISTRY</h3>
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm">PROJECT REGISTRY</h3>
         <button onclick="toggleProjectsModal()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
 
+      <div class="modal-body">
       <div class="bg-cyan-950/20 p-3 border border-cyan-900/40 mb-4 flex flex-col gap-2">
         <div class="flex items-center justify-between">
           <span class="text-[10px] text-cyan-300 tracking-widest font-bold">CORE PROJECT PATH</span>
@@ -639,19 +644,20 @@
         </div>
       </div>
 
+      </div>
     </div>
   </div>
 
   <div id="project-file-editor-modal"
     class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-5xl w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[92vh] overflow-y-auto">
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.2em] text-sm mt-1">PROJECT FILE EDITOR: <span
+    <div class="hud-panel modal-panel max-w-5xl w-full border-cyan-900/80 bg-[#020617] mx-4" style="max-height: 92vh;">
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.2em] text-sm">PROJECT FILE EDITOR: <span
             id="project-file-editor-project" class="text-cyan-300"></span></h3>
         <button onclick="closeProjectFileEditor()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div class="modal-body grid grid-cols-1 md:grid-cols-3 gap-4">
         <div class="md:col-span-1 flex flex-col gap-2">
           <div class="flex items-center gap-2">
             <button id="project-file-editor-up-btn" onclick="navigateProjectFileEditorUp()"
@@ -705,13 +711,14 @@
 
   <div id="folder-modal"
     class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4">
+    <div class="hud-panel modal-panel max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4">
 
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">FOLDER NAVIGATOR</h3>
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm">FOLDER NAVIGATOR</h3>
         <button onclick="closeFolderNavigator()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
 
+      <div class="modal-body">
       <div class="flex items-center gap-2 mb-3">
         <button id="folder-up-btn" onclick="navigateFolderUp()"
           class="btn-ui btn-ui-cyan px-3 py-1.5 text-[9px] font-bold tracking-widest">[UP]</button>
@@ -735,6 +742,7 @@
           THIS FOLDER</button>
       </div>
 
+      </div>
     </div>
   </div>
 
