@@ -11,6 +11,9 @@ window.applyRoleBasedAccess = function () {
   const isTenantUser = !!(currentUser && currentUser.tenant_id) && !isPlatformAdmin;
   const isTenantAdmin = normalizedRole === 'tenant_admin' || normalizedRole === 'tenant_user_admin';
 
+  const shutdownButton = document.getElementById('shutdown-button');
+  if (shutdownButton) shutdownButton.style.display = isPlatformAdmin ? '' : 'none';
+
   const tenantButton = document.getElementById('tenant-registration-button');
   if (tenantButton) {
     tenantButton.style.display = isPlatformAdmin ? '' : 'none';

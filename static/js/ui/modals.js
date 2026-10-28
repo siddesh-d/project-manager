@@ -119,18 +119,46 @@ window.confirmStopService = function () {
 };
 
 window.openShutdownModal = function () {
+  const password = document.getElementById('shutdown-password');
+  if (password) password.value = '';
+  document.getElementById('shutdown-error')?.classList.add('hidden');
   document.getElementById('shutdown-modal')?.classList.remove('hidden');
+  password?.focus();
 };
 
 window.closeShutdownModal = function () {
+  const password = document.getElementById('shutdown-password');
+  if (password) password.value = '';
   document.getElementById('shutdown-modal')?.classList.add('hidden');
 };
 
 window.confirmShutdown = function () {
-  window.logToTerminal('UI_OVERRIDE', 'SYSTEM SHUTDOWN initiated. Terminating core application...', 'text-red-500 font-bold');
-  // volatile = not buffered; disconnect immediately so socket.io never replays this event on reconnect
-  window.AppState.socket?.volatile.emit('shutdown_app');
-  window.AppState.socket?.disconnect();
-  window.closeShutdownModal();
+  const password = document.getElementById('shutdown-password')?.value || '';
+  const errorEl = document.getElementById('shutdown-error');
+  const showError = (message) => {
+    if (!errorEl) return;
+    errorEl.textContent = message;
+    errorEl.classList.remove('hidden');
+  };
+  if (!password) {
+    showError('Password is required.');
+    return;
+  }
+  const socket = window.AppState.socket;
+  if (!socket) {
+    showError('Not connected to the server.');
+    return;
+  }
+  socket.timeout(10000).emit('shutdown_app', { password }, (err, result) => {
+    // The server may exit before acknowledging; a dropped connection means it shut down.
+    const serverStopped = Boolean(err) && !socket.connected;
+    if (!serverStopped && (err || !result || !result.ok)) {
+      showError((result && result.error) || 'Shutdown request failed.');
+      return;
+    }
+    window.logToTerminal('UI_OVERRIDE', 'SYSTEM SHUTDOWN initiated. Terminating core application...', 'text-red-500 font-bold');
+    socket.disconnect();
+    window.closeShutdownModal();
+  });
 };
 

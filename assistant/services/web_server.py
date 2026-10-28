@@ -1881,11 +1881,15 @@ def handle_browse_folders(data):
 # APPLICATION SHUTDOWN
 # =====================================================================
 @socketio.on('shutdown_app')
-def handle_shutdown_app():
+def handle_shutdown_app(data=None):
     user = _get_authenticated_user()
     if not _user_is_platform_admin(user):
         _emit_to_request('system_event', {'ok': False, 'error': 'Platform admin access required.'})
-        return
+        return {'ok': False, 'error': 'Platform admin access required.'}
+
+    password = str((data or {}).get('password') or '') if isinstance(data, dict) else ''
+    if not password or not verify_user(user.get('username'), password):
+        return {'ok': False, 'error': 'Authentication failed. Incorrect password.'}
 
     stream_log_to_ui("SYSTEM", "Shutdown directive confirmed. Terminating core application...", "text-red-500 font-bold")
 
@@ -1903,6 +1907,7 @@ def handle_shutdown_app():
         os._exit(0)
 
     threading.Thread(target=_shutdown, daemon=True).start()
+    return {'ok': True}
 
 # =====================================================================
 # LIVE PM2 LOG STREAMING PIPELINE
