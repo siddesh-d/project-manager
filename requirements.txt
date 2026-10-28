@@ -1,5 +1,4 @@
 Flask
 Flask-SocketIO
 SpeechRecognition
-requests
 requests>=2.32.0

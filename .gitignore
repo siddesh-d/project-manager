@@ -27,6 +27,8 @@ ENV/
 # Local, machine-specific data (copy from *.example.json)
 /users.json
 /tenants.json
+/projects.json
+/settings.json
 /users/
 /tenants/
 

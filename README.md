@@ -1,5 +1,34 @@
 # project-manager
 
+## Project Structure
+
+```
+assistant/
+  config/      settings and environment loading (reads .env)
+  core/        app entry point, boot sequence, command center
+  registry/    project registry
+  services/    web server, PM2, voice, file operations
+  auth.py      users, tenants, roles
+static/        frontend JS/CSS
+templates/     HTML templates
+tests/         unittest suite
+docs/          project notes
+main.py        entry point
+```
+
+## Setup
+
+```
+pip install -r requirements.txt
+copy .env.example .env      # then set SECRET_KEY and ADMIN_PASSWORD
+python main.py
+```
+
+Local, git-ignored files: `.env`, `users.json`, `tenants.json`, `projects.json`,
+`settings.json`, `users/`, `tenants/`. `users.json` is created automatically on
+first run (from `users.example.json`), with an `admin` user whose password is
+`ADMIN_PASSWORD`. Run tests with `python -m unittest discover -s tests`.
+
 ## PM2 Cluster Instances
 
 Select RUN in Projects or RESTORE SERVICE in the service dashboard to open the
