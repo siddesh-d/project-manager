@@ -57,6 +57,7 @@ from assistant.config import (
 from assistant.registry import projects
 from assistant.services import pm2_manager
 from assistant.services import project_file_ops
+from assistant.services import project_runtime
 
 app = Flask(
     __name__,
@@ -1607,6 +1608,15 @@ def handle_client_disconnect(reason=None):
     # Normal client navigation/reload disconnects are expected in browser sessions.
     if disconnect_reason not in {"client disconnect", "client_disconnect", "transport close"}:
         stream_log_to_ui("SYSTEM", f"Client disconnected: {disconnect_reason}", "text-amber-400")
+
+@socketio.on('get_op_status')
+def handle_get_op_status(data):
+    """Reports the backend's live stage for an in-flight service operation."""
+    if not _get_authenticated_user():
+        return {'ok': False, 'error': 'Authentication required.'}
+    service = str((data or {}).get('service', '')).strip()
+    return {'ok': True, 'stage': project_runtime.get_active_stage(service)}
+
 
 @socketio.on('ui_command')
 def handle_incoming_ui_command(data):

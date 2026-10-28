@@ -5,10 +5,29 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 
 from assistant.services import pm2_cli
 
 NODE_PACKAGE_MANAGERS = {"npm", "yarn", "pnpm"}
+
+# Live stage of in-flight start operations, keyed by lowercase project name.
+_active_stages = {}
+_active_stages_lock = threading.Lock()
+
+
+def set_active_stage(name, stage):
+    key = str(name or "").lower()
+    with _active_stages_lock:
+        if stage:
+            _active_stages[key] = stage
+        else:
+            _active_stages.pop(key, None)
+
+
+def get_active_stage(name):
+    with _active_stages_lock:
+        return _active_stages.get(str(name or "").lower())
 
 
 def build_command_env(extra_env=None):

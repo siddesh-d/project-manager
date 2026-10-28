@@ -164,6 +164,7 @@ def _prepare_project_runtime(proj, voice):
             broadcast(voice, f"Dependency installation failed for {label}.", color="text-red-400", speak=True)
             return False
 
+        project_runtime.set_active_stage(name, "Dependency installation is in progress.")
         broadcast(voice, f"Installing dependencies for {label}...", color="text-cyan-400", speak=False)
         code, output = _run_command_with_output(prepared_install_command, path, extra_env=project_env)
         if code != 0:
@@ -175,6 +176,7 @@ def _prepare_project_runtime(proj, voice):
 
     build_command = str(profile.get("build_command") or "").strip()
     if profile.get("auto_build", True) and build_command and _needs_build(path, profile, runtime_state):
+        project_runtime.set_active_stage(name, "Build is in progress.")
         broadcast(voice, f"Building {label}...", color="text-cyan-400", speak=False)
         code, output = _run_command_with_output(build_command, path, extra_env=project_env)
         if code != 0:
@@ -209,6 +211,15 @@ def _pm2_delete_quiet(pm2_name):
 
 
 def intelligent_service_start(proj, voice, ear, instances=None):
+    """Starts a project, publishing its live stage for status checks until it finishes."""
+    project_runtime.set_active_stage(proj["name"], "Start is in progress.")
+    try:
+        return _intelligent_service_start(proj, voice, ear, instances=instances)
+    finally:
+        project_runtime.set_active_stage(proj["name"], None)
+
+
+def _intelligent_service_start(proj, voice, ear, instances=None):
     """Starts a project with validation, dependency install, and optional build preparation."""
     pm2_name = proj["name"]
     path = proj["path"]
