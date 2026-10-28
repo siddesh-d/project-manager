@@ -58,6 +58,7 @@ from assistant.registry import projects
 from assistant.services import pm2_manager
 from assistant.services import project_file_ops
 from assistant.services import project_runtime
+from assistant.core.timeutil import utc_now_iso
 
 app = Flask(
     __name__,
@@ -665,9 +666,10 @@ def _emit_to_request(event, payload):
 
 def stream_log_to_ui(source, message, color="text-zinc-300", tenant_id=None, room=None):
     """Prints logs cleanly to CMD and streams them to the UI over WebSockets."""
-    print(f"[{source}] {message}")
+    timestamp = utc_now_iso()
+    print(f"{timestamp} [{source}] {message}")
     sys.stdout.flush()
-    payload = {'source': source, 'message': message, 'color': color}
+    payload = {'source': source, 'message': message, 'color': color, 'ts': timestamp}
     if room is None and has_request_context():
         room = getattr(request, 'sid', None)
     if room:
@@ -783,7 +785,7 @@ def public_log_endpoint():
     try:
         log_file_path = os.path.join(str(BASE_DIR), 'public_api_calls.log')
 
-        current_time = time.strftime('%Y-%m-%d %H:%M:%S')
+        current_time = utc_now_iso()
         client_ip = request.remote_addr
 
         # Parse JSON request body safely (returns a dictionary or None)
@@ -1995,7 +1997,7 @@ def handle_toggle_logs(data):
                         except Exception:
                             pass
                         break
-                    socketio.emit('service_log_chunk', {'service': name, 'log': line.strip()}, room=target_sid)
+                    socketio.emit('service_log_chunk', {'service': name, 'log': line.strip(), 'ts': utc_now_iso()}, room=target_sid)
                 p.stdout.close()
                 if key in active_log_processes and active_log_processes[key] == p:
                     del active_log_processes[key]

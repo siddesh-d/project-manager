@@ -1,11 +1,17 @@
 import json
 import os
+import time
 from pathlib import Path
 
 # =====================================================================
 # SERVER & NETWORK CONFIGURATION
 # =====================================================================
 BASE_DIR = Path(__file__).resolve().parents[2]
+
+# Project timezone is UTC; browsers convert timestamps to the user's local zone.
+os.environ["TZ"] = "UTC"
+if hasattr(time, "tzset"):
+    time.tzset()
 
 
 def _load_env_file(path):
