@@ -669,8 +669,14 @@
           </div>
           <input id="project-file-upload-input" type="file" multiple class="hidden"
             onchange="uploadProjectFiles(this.files)" />
-          <button type="button" onclick="selectProjectFilesToUpload()"
-            class="btn-ui btn-ui-cyan w-full px-2 py-1.5 text-[9px] font-bold">UPLOAD FILES TO THIS FOLDER</button>
+          <input id="project-folder-upload-input" type="file" webkitdirectory directory multiple class="hidden"
+            onchange="uploadProjectFiles(this.files)" />
+          <div class="flex gap-2">
+            <button type="button" onclick="selectProjectFilesToUpload()"
+              class="btn-ui btn-ui-cyan flex-1 px-2 py-1.5 text-[9px] font-bold">UPLOAD FILES TO THIS FOLDER</button>
+            <button type="button" onclick="selectProjectFolderToUpload()"
+              class="btn-ui btn-ui-cyan flex-1 px-2 py-1.5 text-[9px] font-bold">UPLOAD FOLDER</button>
+          </div>
           <div id="project-file-editor-list"
             class="flex flex-col gap-1 max-h-[58vh] overflow-y-auto border border-cyan-900/40 bg-black p-2">
             <div class="text-cyan-800 italic text-center text-[10px] py-4">Select a project to browse files.</div>

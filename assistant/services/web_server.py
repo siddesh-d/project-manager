@@ -1174,15 +1174,31 @@ def upload_project_files(project_name):
         return jsonify({'ok': False, 'error': 'Select at least one file to upload.'}), 400
 
     upload_path = request.form.get('path', '')
+    relative_paths_raw = request.form.get('relative_paths')
+    if relative_paths_raw:
+        try:
+            upload_names = json.loads(relative_paths_raw)
+            if not isinstance(upload_names, list) or len(upload_names) != len(uploaded_files):
+                raise ValueError('Invalid relative paths payload')
+        except Exception:
+            return jsonify({'ok': False, 'error': 'Invalid upload metadata.'}), 400
+    else:
+        upload_names = [f.filename for f in uploaded_files]
+
     try:
         _, target_dir, _ = _resolve_project_file_path(
             project, upload_path, allow_directory=True
         )
         destinations = []
         seen_destinations = set()
-        for uploaded_file in uploaded_files:
-            filename = str(uploaded_file.filename or '').strip()
-            if not filename or filename in {'.', '..'} or '/' in filename or '\\' in filename or '\x00' in filename:
+        for uploaded_file, upload_name in zip(uploaded_files, upload_names):
+            filename = str(upload_name or '').strip().replace('\\', '/')
+            parts = filename.split('/')
+            if (
+                not filename or '\x00' in filename or filename.startswith('/')
+                or any(part in {'', '.', '..'} for part in parts)
+                or (not relative_paths_raw and len(parts) > 1)
+            ):
                 return jsonify({'ok': False, 'error': 'Uploaded files must have a valid file name.'}), 400
 
             relative_path = '/'.join(part for part in [upload_path.strip('/\\'), filename] if part)
@@ -1200,7 +1216,8 @@ def upload_project_files(project_name):
         temporary_files = []
         try:
             for uploaded_file, target_file, _ in destinations:
-                if os.path.dirname(target_file) != target_dir and not os.path.isdir(os.path.dirname(target_file)):
+                os.makedirs(os.path.dirname(target_file), exist_ok=True)
+                if not os.path.isdir(os.path.dirname(target_file)):
                     return jsonify({'ok': False, 'error': 'Upload folder is not accessible.'}), 400
                 handle = tempfile.NamedTemporaryFile(
                     dir=os.path.dirname(target_file), prefix='.upload_', suffix='.tmp', delete=False
