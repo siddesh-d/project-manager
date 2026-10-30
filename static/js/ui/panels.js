@@ -84,6 +84,36 @@ window.drawMetricGraph = function (canvasId, history, maxValue, strokeRgb) {
 
 window.toggleSettingsModal = function () {
   if (typeof window.renderSettingsUI === 'function') window.renderSettingsUI();
+  ['pw-current', 'pw-new', 'pw-confirm'].forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('pw-message')?.classList.add('hidden');
   document.getElementById('settings-modal')?.classList.toggle('hidden');
+};
+
+window.submitPasswordChange = async function () {
+  const current = document.getElementById('pw-current');
+  const next = document.getElementById('pw-new');
+  const confirm = document.getElementById('pw-confirm');
+  const messageEl = document.getElementById('pw-message');
+  const show = (text, ok) => {
+    if (!messageEl) return;
+    messageEl.textContent = text;
+    messageEl.classList.remove('hidden', 'text-red-400', 'text-emerald-400');
+    messageEl.classList.add(ok ? 'text-emerald-400' : 'text-red-400');
+  };
+  if (!current.value || !next.value || !confirm.value) return show('All password fields are required.', false);
+  if (next.value !== confirm.value) return show('New password and confirmation do not match.', false);
+
+  try {
+    const { payload, ok } = await window.fetchApi('/api/change-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ current_password: current.value, new_password: next.value, confirm_password: confirm.value }),
+    });
+    if (!ok) return show(payload.error || 'Unable to change password.', false);
+    [current, next, confirm].forEach((el) => { el.value = ''; });
+    show(payload.message || 'Password updated successfully.', true);
+  } catch (error) {
+    show('Unable to change password.', false);
+  }
 };
 

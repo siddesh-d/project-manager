@@ -6,7 +6,7 @@ const OP_LABELS = {
   stop: { busy: 'Stopping...', done: 'stopped' },
   restart: { busy: 'Restarting...', done: 'restarted' },
 };
-const OP_TIMEOUT_MS = 60000;
+const OP_POLL_MS = 3000; // how often the UI asks the backend for the live stage
 window.AppState.pendingOps = window.AppState.pendingOps || {};
 const opFailures = {};
 
@@ -54,7 +54,7 @@ window.runServiceOperation = function (action, serviceName, command) {
   const finish = (error) => {
     const entry = window.AppState.pendingOps[serviceName];
     if (!entry || entry.token !== token) return;
-    clearTimeout(entry.timer);
+    clearInterval(entry.timer);
     delete window.AppState.pendingOps[serviceName];
     const failure = error || opFailures[serviceName];
     delete opFailures[serviceName];
@@ -66,11 +66,18 @@ window.runServiceOperation = function (action, serviceName, command) {
 
   const token = Symbol(serviceName);
   delete opFailures[serviceName];
-  window.AppState.pendingOps[serviceName] = {
-    action,
-    token,
-    timer: setTimeout(() => finish('No response from server.'), OP_TIMEOUT_MS),
-  };
+  const entry = { action, token, stage: '' };
+  // Completion is driven by the backend ack / project_start_result; this only polls the live stage.
+  entry.timer = setInterval(() => {
+    if (!socket.connected) { finish('Connection to server lost.'); return; }
+    socket.emit('get_op_status', { service: serviceName }, (res) => {
+      const current = window.AppState.pendingOps[serviceName];
+      if (!current || current.token !== token || !res || !res.ok || !res.stage || res.stage === current.stage) return;
+      current.stage = res.stage;
+      window.logToTerminal('UI_OVERRIDE', `Checked now: ${res.stage}`, 'text-cyan-400');
+    });
+  }, OP_POLL_MS);
+  window.AppState.pendingOps[serviceName] = entry;
   window.logToTerminal('UI_OVERRIDE', `${OP_LABELS[action].busy.replace('...', '')} ${serviceName}...`, 'text-amber-400 font-bold');
   window.applyPendingOps();
   try {

@@ -199,15 +199,24 @@ window.selectProjectFilesToUpload = function () {
   document.getElementById('project-file-upload-input')?.click();
 };
 
+window.selectProjectFolderToUpload = function () {
+  document.getElementById('project-folder-upload-input')?.click();
+};
+
 window.uploadProjectFiles = async function (files) {
   const projectName = window.AppState.fileEditorProject;
-  const fileInput = document.getElementById('project-file-upload-input');
+  const fileInputs = ['project-file-upload-input', 'project-folder-upload-input']
+    .map(id => document.getElementById(id));
   if (!projectName || !files || !files.length) return;
 
   showProjectFileEditorError(null);
   const formData = new FormData();
   formData.append('path', window.AppState.fileEditorPath || '');
-  Array.from(files).forEach(file => formData.append('project_files', file, file.name));
+  const fileList = Array.from(files);
+  const relativePaths = fileList.map(file => file.webkitRelativePath || file.name);
+  const hasFolderStructure = fileList.some(file => file.webkitRelativePath);
+  fileList.forEach((file, index) => formData.append('project_files', file, relativePaths[index]));
+  if (hasFolderStructure) formData.append('relative_paths', JSON.stringify(relativePaths));
 
   try {
     const response = await fetch(`/api/projects/${encodeURIComponent(projectName)}/files`, {
@@ -224,7 +233,7 @@ window.uploadProjectFiles = async function (files) {
   } catch (error) {
     showProjectFileEditorError('Unable to upload files.');
   } finally {
-    if (fileInput) fileInput.value = '';
+    fileInputs.forEach(input => { if (input) input.value = ''; });
   }
 };
 

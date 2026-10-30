@@ -164,6 +164,7 @@ def _prepare_project_runtime(proj, voice):
             broadcast(voice, f"Dependency installation failed for {label}.", color="text-red-400", speak=True)
             return False
 
+        project_runtime.set_active_stage(name, "Dependency installation is in progress.")
         broadcast(voice, f"Installing dependencies for {label}...", color="text-cyan-400", speak=False)
         code, output = _run_command_with_output(prepared_install_command, path, extra_env=project_env)
         if code != 0:
@@ -175,6 +176,7 @@ def _prepare_project_runtime(proj, voice):
 
     build_command = str(profile.get("build_command") or "").strip()
     if profile.get("auto_build", True) and build_command and _needs_build(path, profile, runtime_state):
+        project_runtime.set_active_stage(name, "Build is in progress.")
         broadcast(voice, f"Building {label}...", color="text-cyan-400", speak=False)
         code, output = _run_command_with_output(build_command, path, extra_env=project_env)
         if code != 0:
@@ -209,6 +211,15 @@ def _pm2_delete_quiet(pm2_name):
 
 
 def intelligent_service_start(proj, voice, ear, instances=None):
+    """Starts a project, publishing its live stage for status checks until it finishes."""
+    project_runtime.set_active_stage(proj["name"], "Start is in progress.")
+    try:
+        return _intelligent_service_start(proj, voice, ear, instances=instances)
+    finally:
+        project_runtime.set_active_stage(proj["name"], None)
+
+
+def _intelligent_service_start(proj, voice, ear, instances=None):
     """Starts a project with validation, dependency install, and optional build preparation."""
     pm2_name = proj["name"]
     path = proj["path"]
@@ -349,13 +360,18 @@ def _online_virtual_amrs():
 
 
 def process_command(raw_command, voice, ear=None, tenant_id=None):
-    from assistant.services.pm2_manager import parse_delete_logs, parse_start_instances
+    from assistant.services.pm2_manager import parse_delete_logs, parse_keep_logs, parse_start_instances
 
     try:
-        raw_command, delete_logs = parse_delete_logs(raw_command)
+        raw_command, keep_logs = parse_keep_logs(raw_command)
+        raw_command, explicit_delete_logs = parse_delete_logs(raw_command)
+        if keep_logs and explicit_delete_logs:
+            raise ValueError('Use either --delete-logs or keep logs, not both.')
         raw_command, instances = parse_start_instances(raw_command)
     except ValueError as error:
         return {"type": "start_result", "target": "", "ok": False, "message": str(error)}
+    # Removing a service also removes its logs unless the user asked to keep them.
+    delete_logs = not keep_logs
     raw_command_stripped = raw_command.strip()
     command = raw_command_stripped.lower()
 
@@ -363,10 +379,6 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
         return
 
     raw_parts = raw_command.strip().split()
-    if delete_logs and (len(raw_parts) != 2 or raw_parts[0].lower() not in {'delete', 'remove'}
-                        or raw_parts[1].lower() in {'all', 'all services'}):
-        return {"type": "command_result", "target": "", "ok": False,
-                "message": "Log deletion must target one PM2 service at a time."}
     command_projects = [
         project for project in get_projects()
         if tenant_id is None or str(project.get('tenant_id') or '').strip() == str(tenant_id).strip()
@@ -424,7 +436,9 @@ def process_command(raw_command, voice, ear=None, tenant_id=None):
         if require_confirmation(voice, ear, "delete", "all infrastructure services", is_ui_exact=False):
             broadcast(voice, "Purging project-specific services from the P M 2 registry.", color="text-red-400", speak=True)
             for proj in command_projects:
-                subprocess.run(f'"{PM2_EXECUTABLE}" delete {proj["name"]}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                deleted, message = _delete_pm2_service(proj["name"], delete_logs=delete_logs)
+                if not deleted:
+                    broadcast(voice, message, color="text-red-400", speak=False)
         return
 
     elif "exit" in command or "quit" in command:

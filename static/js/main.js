@@ -194,7 +194,7 @@ document.getElementById('command-form')?.addEventListener('submit', (e) => {
 
 // LOG LISTENERS
 socket.on('log_stream', (data) => {
-  window.logToTerminal(data.source || assistantLogLabel, data.message, data.color || 'text-cyan-200');
+  window.logToTerminal(data.source || assistantLogLabel, data.message, data.color || 'text-cyan-200', data.ts);
   if (data.source === assistantLogLabel && typeof window.speakBrowserResponse === 'function') {
     window.speakBrowserResponse(data.message);
   }
@@ -215,7 +215,7 @@ socket.on('service_log_chunk', (data) => {
   else if (textLower.includes('debug')) color = 'text-cyan-600';
 
   entry.className = `border-b border-cyan-900/20 py-0.5 last:border-0 ${color}`;
-  entry.textContent = data.log;
+  entry.textContent = `${window.formatLocalTime(data.ts)} ${data.log}`;
   stream.appendChild(entry);
   stream.scrollTop = stream.scrollHeight;
 });

@@ -30,6 +30,7 @@ from assistant.auth import (
     save_tenant_store,
     save_user_store,
     set_tenant_core_project_path,
+    change_user_password,
     update_tenant_user,
     user_has_permission,
     user_has_scope_access,
@@ -56,6 +57,8 @@ from assistant.config import (
 from assistant.registry import projects
 from assistant.services import pm2_manager
 from assistant.services import project_file_ops
+from assistant.services import project_runtime
+from assistant.core.timeutil import utc_now_iso
 
 app = Flask(
     __name__,
@@ -334,7 +337,7 @@ def _filter_pm2_services_for_user(services, user=None):
     return filtered
 
 
-def _run_bulk_project_action_for_user(user, action, command_callback, instances=None):
+def _run_bulk_project_action_for_user(user, action, command_callback, instances=None, keep_logs=False):
     if not _user_can_manage_projects(user):
         return {'ok': False, 'error': 'Permission denied.', 'results': []}
     if not callable(command_callback):
@@ -347,7 +350,8 @@ def _run_bulk_project_action_for_user(user, action, command_callback, instances=
         if not project_name:
             continue
         instance_args = f' --instances {instances}' if instances is not None else ''
-        callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}{instance_args}', user)
+        keep_log_args = ' --keep-logs' if keep_logs and action == 'delete' else ''
+        callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}{instance_args}{keep_log_args}', user)
         results.append({
             'name': project_name,
             'ok': not isinstance(callback_result, dict) or bool(callback_result.get('ok', True)),
@@ -371,9 +375,10 @@ def _invoke_command_callback(command_callback, command_text, user):
 
 
 def _authorize_tenant_ui_command(user, command_text, command_callback):
-    from assistant.services.pm2_manager import parse_delete_logs, parse_start_instances
+    from assistant.services.pm2_manager import parse_delete_logs, parse_keep_logs, parse_start_instances
 
     try:
+        command_text, keep_logs = parse_keep_logs(command_text)
         command_text, delete_logs = parse_delete_logs(command_text)
         command_text, instances = parse_start_instances(command_text)
     except ValueError as error:
@@ -390,11 +395,9 @@ def _authorize_tenant_ui_command(user, command_text, command_callback):
         return {'ok': False, 'error': 'Command is not available to tenant users.'}
 
     if target.lower() in {'all', 'all services'}:
-        if delete_logs:
-            return {'ok': False, 'error': 'Log deletion must target one service at a time.'}
         if action == 'log':
             return {'ok': False, 'error': 'Bulk log access is not allowed.'}
-        return _run_bulk_project_action_for_user(user, action, command_callback, instances=instances)
+        return _run_bulk_project_action_for_user(user, action, command_callback, instances=instances, keep_logs=keep_logs)
 
     project = _get_project_for_user(target, user, require_manage=True)
     if not project:
@@ -408,6 +411,8 @@ def _authorize_tenant_ui_command(user, command_text, command_callback):
         return {'ok': False, 'error': 'Command processor is unavailable.'}
     instance_args = f' --instances {instances}' if instances is not None else ''
     delete_log_args = ' --delete-logs' if delete_logs else ''
+    if keep_logs and action == 'delete':
+        delete_log_args = ' --keep-logs'
     callback_result = _invoke_command_callback(command_callback, f'{action} {project_name}{instance_args}{delete_log_args}', user)
     return {'ok': not isinstance(callback_result, dict) or bool(callback_result.get('ok', True)), 'results': [{'name': project_name, 'result': callback_result}]}
 
@@ -661,9 +666,10 @@ def _emit_to_request(event, payload):
 
 def stream_log_to_ui(source, message, color="text-zinc-300", tenant_id=None, room=None):
     """Prints logs cleanly to CMD and streams them to the UI over WebSockets."""
-    print(f"[{source}] {message}")
+    timestamp = utc_now_iso()
+    print(f"{timestamp} [{source}] {message}")
     sys.stdout.flush()
-    payload = {'source': source, 'message': message, 'color': color}
+    payload = {'source': source, 'message': message, 'color': color, 'ts': timestamp}
     if room is None and has_request_context():
         room = getattr(request, 'sid', None)
     if room:
@@ -693,7 +699,7 @@ def enforce_authentication():
             return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
         return None
 
-    if request.path.startswith('/api/') and request.path not in {'/api/login', '/api/session', '/api/logout'}:
+    if request.path.startswith('/api/') and request.path not in {'/api/login', '/api/session', '/api/logout', '/api/change-password'}:
         if not _require_scope_access() and not _require_admin_auth():
             return jsonify({'ok': False, 'error': 'Access denied.'}), 403
 
@@ -745,6 +751,23 @@ def logout():
     return jsonify({'ok': True})
 
 
+@app.route('/api/change-password', methods=['POST'])
+def change_password():
+    user = _get_authenticated_user()
+    if not user:
+        return jsonify({'ok': False, 'error': 'Authentication required.'}), 401
+
+    data = request.get_json(silent=True) or {}
+    new_password = str(data.get('new_password') or '')
+    if new_password != str(data.get('confirm_password') or ''):
+        return jsonify({'ok': False, 'error': 'New password and confirmation do not match.'}), 400
+    try:
+        change_user_password(user['id'], data.get('current_password'), new_password)
+    except ValueError as exc:
+        return jsonify({'ok': False, 'error': str(exc)}), 400
+    return jsonify({'ok': True, 'message': 'Password updated successfully.'})
+
+
 @app.route('/api/session', methods=['GET'])
 def check_session():
     user = _get_authenticated_user()
@@ -762,7 +785,7 @@ def public_log_endpoint():
     try:
         log_file_path = os.path.join(str(BASE_DIR), 'public_api_calls.log')
 
-        current_time = time.strftime('%Y-%m-%d %H:%M:%S')
+        current_time = utc_now_iso()
         client_ip = request.remote_addr
 
         # Parse JSON request body safely (returns a dictionary or None)
@@ -1174,15 +1197,31 @@ def upload_project_files(project_name):
         return jsonify({'ok': False, 'error': 'Select at least one file to upload.'}), 400
 
     upload_path = request.form.get('path', '')
+    relative_paths_raw = request.form.get('relative_paths')
+    if relative_paths_raw:
+        try:
+            upload_names = json.loads(relative_paths_raw)
+            if not isinstance(upload_names, list) or len(upload_names) != len(uploaded_files):
+                raise ValueError('Invalid relative paths payload')
+        except Exception:
+            return jsonify({'ok': False, 'error': 'Invalid upload metadata.'}), 400
+    else:
+        upload_names = [f.filename for f in uploaded_files]
+
     try:
         _, target_dir, _ = _resolve_project_file_path(
             project, upload_path, allow_directory=True
         )
         destinations = []
         seen_destinations = set()
-        for uploaded_file in uploaded_files:
-            filename = str(uploaded_file.filename or '').strip()
-            if not filename or filename in {'.', '..'} or '/' in filename or '\\' in filename or '\x00' in filename:
+        for uploaded_file, upload_name in zip(uploaded_files, upload_names):
+            filename = str(upload_name or '').strip().replace('\\', '/')
+            parts = filename.split('/')
+            if (
+                not filename or '\x00' in filename or filename.startswith('/')
+                or any(part in {'', '.', '..'} for part in parts)
+                or (not relative_paths_raw and len(parts) > 1)
+            ):
                 return jsonify({'ok': False, 'error': 'Uploaded files must have a valid file name.'}), 400
 
             relative_path = '/'.join(part for part in [upload_path.strip('/\\'), filename] if part)
@@ -1200,7 +1239,8 @@ def upload_project_files(project_name):
         temporary_files = []
         try:
             for uploaded_file, target_file, _ in destinations:
-                if os.path.dirname(target_file) != target_dir and not os.path.isdir(os.path.dirname(target_file)):
+                os.makedirs(os.path.dirname(target_file), exist_ok=True)
+                if not os.path.isdir(os.path.dirname(target_file)):
                     return jsonify({'ok': False, 'error': 'Upload folder is not accessible.'}), 400
                 handle = tempfile.NamedTemporaryFile(
                     dir=os.path.dirname(target_file), prefix='.upload_', suffix='.tmp', delete=False
@@ -1571,6 +1611,15 @@ def handle_client_disconnect(reason=None):
     if disconnect_reason not in {"client disconnect", "client_disconnect", "transport close"}:
         stream_log_to_ui("SYSTEM", f"Client disconnected: {disconnect_reason}", "text-amber-400")
 
+@socketio.on('get_op_status')
+def handle_get_op_status(data):
+    """Reports the backend's live stage for an in-flight service operation."""
+    if not _get_authenticated_user():
+        return {'ok': False, 'error': 'Authentication required.'}
+    service = str((data or {}).get('service', '')).strip()
+    return {'ok': True, 'stage': project_runtime.get_active_stage(service)}
+
+
 @socketio.on('ui_command')
 def handle_incoming_ui_command(data):
     """Processes commands typed directly into the Web UI input box."""
@@ -1598,11 +1647,8 @@ def handle_incoming_ui_command(data):
                     'ok': bool(callback_result.get('ok')),
                     'message': callback_result.get('message', ''),
                 })
-        stream_log_to_ui(
-            "UI-OVERRIDE",
-            f"Tenant-scoped command {'executed' if command_result.get('ok') else 'denied'}.",
-            "text-amber-400",
-        )
+        if not command_result.get('ok'):
+            stream_log_to_ui("UI-OVERRIDE", "Tenant-scoped command denied.", "text-amber-400")
         return command_result
 
     callback_result = None
@@ -1621,8 +1667,6 @@ def handle_incoming_ui_command(data):
             'message': callback_result.get('message', ''),
         })
         return
-
-    stream_log_to_ui("UI-OVERRIDE", f"Executing text input: {command_text}", "text-amber-400")
 
 # =====================================================================
 # PROJECT REGISTRY MANAGEMENT (JSON-BACKED)
@@ -1867,11 +1911,15 @@ def handle_browse_folders(data):
 # APPLICATION SHUTDOWN
 # =====================================================================
 @socketio.on('shutdown_app')
-def handle_shutdown_app():
+def handle_shutdown_app(data=None):
     user = _get_authenticated_user()
     if not _user_is_platform_admin(user):
         _emit_to_request('system_event', {'ok': False, 'error': 'Platform admin access required.'})
-        return
+        return {'ok': False, 'error': 'Platform admin access required.'}
+
+    password = str((data or {}).get('password') or '') if isinstance(data, dict) else ''
+    if not password or not verify_user(user.get('username'), password):
+        return {'ok': False, 'error': 'Authentication failed. Incorrect password.'}
 
     stream_log_to_ui("SYSTEM", "Shutdown directive confirmed. Terminating core application...", "text-red-500 font-bold")
 
@@ -1889,6 +1937,7 @@ def handle_shutdown_app():
         os._exit(0)
 
     threading.Thread(target=_shutdown, daemon=True).start()
+    return {'ok': True}
 
 # =====================================================================
 # LIVE PM2 LOG STREAMING PIPELINE
@@ -1948,7 +1997,7 @@ def handle_toggle_logs(data):
                         except Exception:
                             pass
                         break
-                    socketio.emit('service_log_chunk', {'service': name, 'log': line.strip()}, room=target_sid)
+                    socketio.emit('service_log_chunk', {'service': name, 'log': line.strip(), 'ts': utc_now_iso()}, room=target_sid)
                 p.stdout.close()
                 if key in active_log_processes and active_log_processes[key] == p:
                     del active_log_processes[key]

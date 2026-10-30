@@ -23,12 +23,19 @@ setInterval(() => {
 }, 1000);
 
 // --- TERMINAL LOGGER ---
-window.logToTerminal = function (source, message, colorClass) {
+// Backend timestamps are UTC ISO strings; render them in the user's local timezone.
+window.formatLocalTime = function (isoUtc) {
+  const date = isoUtc ? new Date(isoUtc) : new Date();
+  const safe = Number.isNaN(date.getTime()) ? new Date() : date;
+  return `${safe.toLocaleDateString([], { year: 'numeric', month: '2-digit', day: '2-digit' })} ${safe.toLocaleTimeString([], { hour12: false })}`;
+};
+
+window.logToTerminal = function (source, message, colorClass, timestamp) {
   const stream = document.getElementById('terminal-stream');
   if (!stream) return;
   const entry = document.createElement('div');
   entry.className = `break-all ${colorClass} py-0.5 border-b border-cyan-900/20 last:border-0`;
-  entry.innerHTML = `<span class="opacity-50 mr-2 text-[10px]">▪</span><span class="text-cyan-700 w-20 inline-block font-bold">[${source}]</span> ${message}`;
+  entry.innerHTML = `<span class="opacity-50 mr-2 text-[10px]">▪</span><span class="opacity-60 mr-2 text-[10px]">${window.formatLocalTime(timestamp)}</span><span class="text-cyan-700 w-20 inline-block font-bold">[${source}]</span> ${message}`;
   stream.appendChild(entry);
   stream.scrollTop = stream.scrollHeight;
 };

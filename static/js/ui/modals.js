@@ -76,7 +76,7 @@ document.addEventListener('keydown', event => {
 window.promptRemoveService = function (serviceName) {
   window.AppState.serviceToRemove = serviceName;
   const deleteLogs = document.getElementById('remove-delete-logs');
-  if (deleteLogs) deleteLogs.checked = false;
+  if (deleteLogs) deleteLogs.checked = true;
   const target = document.getElementById('remove-target-name');
   if (target) target.textContent = serviceName;
   document.getElementById('remove-modal')?.classList.remove('hidden');
@@ -85,15 +85,14 @@ window.promptRemoveService = function (serviceName) {
 window.closeRemoveModal = function () {
   window.AppState.serviceToRemove = null;
   const deleteLogs = document.getElementById('remove-delete-logs');
-  if (deleteLogs) deleteLogs.checked = false;
+  if (deleteLogs) deleteLogs.checked = true;
   document.getElementById('remove-modal')?.classList.add('hidden');
 };
 
 window.confirmRemoveService = function () {
   if (window.AppState.serviceToRemove && window.AppState.socket) {
-    window.logToTerminal('UI_OVERRIDE', `Initiating REMOVE sequence for ${window.AppState.serviceToRemove}`, 'text-red-500 font-bold');
     const deleteLogs = document.getElementById('remove-delete-logs')?.checked;
-    const deleteLogOption = deleteLogs ? ' --delete-logs' : '';
+    const deleteLogOption = deleteLogs ? ' --delete-logs' : ' --keep-logs';
     window.AppState.socket.emit('ui_command', { command: `delete ${window.AppState.serviceToRemove}${deleteLogOption}` });
     window.closeRemoveModal();
   }
@@ -120,18 +119,46 @@ window.confirmStopService = function () {
 };
 
 window.openShutdownModal = function () {
+  const password = document.getElementById('shutdown-password');
+  if (password) password.value = '';
+  document.getElementById('shutdown-error')?.classList.add('hidden');
   document.getElementById('shutdown-modal')?.classList.remove('hidden');
+  password?.focus();
 };
 
 window.closeShutdownModal = function () {
+  const password = document.getElementById('shutdown-password');
+  if (password) password.value = '';
   document.getElementById('shutdown-modal')?.classList.add('hidden');
 };
 
 window.confirmShutdown = function () {
-  window.logToTerminal('UI_OVERRIDE', 'SYSTEM SHUTDOWN initiated. Terminating core application...', 'text-red-500 font-bold');
-  // volatile = not buffered; disconnect immediately so socket.io never replays this event on reconnect
-  window.AppState.socket?.volatile.emit('shutdown_app');
-  window.AppState.socket?.disconnect();
-  window.closeShutdownModal();
+  const password = document.getElementById('shutdown-password')?.value || '';
+  const errorEl = document.getElementById('shutdown-error');
+  const showError = (message) => {
+    if (!errorEl) return;
+    errorEl.textContent = message;
+    errorEl.classList.remove('hidden');
+  };
+  if (!password) {
+    showError('Password is required.');
+    return;
+  }
+  const socket = window.AppState.socket;
+  if (!socket) {
+    showError('Not connected to the server.');
+    return;
+  }
+  socket.timeout(10000).emit('shutdown_app', { password }, (err, result) => {
+    // The server may exit before acknowledging; a dropped connection means it shut down.
+    const serverStopped = Boolean(err) && !socket.connected;
+    if (!serverStopped && (err || !result || !result.ok)) {
+      showError((result && result.error) || 'Shutdown request failed.');
+      return;
+    }
+    window.logToTerminal('UI_OVERRIDE', 'SYSTEM SHUTDOWN initiated. Terminating core application...', 'text-red-500 font-bold');
+    socket.disconnect();
+    window.closeShutdownModal();
+  });
 };
 

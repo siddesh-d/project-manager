@@ -76,8 +76,9 @@
           [ LOGOUT ]
         </button>
 
-        <button onclick="openShutdownModal()"
-          class="btn-ui btn-ui-red shrink-0 px-3 py-1 flex items-center justify-center" title="Shutdown System">
+        <button id="shutdown-button" onclick="openShutdownModal()"
+          class="btn-ui btn-ui-red shrink-0 px-3 py-1 flex items-center justify-center" title="Shutdown System"
+          style="display: none;">
           <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
             <path
               d="M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z" />
@@ -275,12 +276,13 @@
 
   <div id="tenant-management-modal"
     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-4xl w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">TENANT MANAGEMENT</h3>
+    <div class="hud-panel modal-panel max-w-4xl w-full border-cyan-900/80 bg-[#020617] mx-4">
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm">TENANT MANAGEMENT</h3>
         <button onclick="document.getElementById('tenant-management-modal').classList.add('hidden')"
           class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
+      <div class="modal-body">
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div class="space-y-3">
@@ -298,18 +300,19 @@
           <div id="tenant-user-list" class="space-y-2"></div>
         </div>
       </div>
+      </div>
     </div>
   </div>
 
   <div id="tenant-registration-modal"
     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">TENANT REGISTRATION</h3>
+    <div class="hud-panel modal-panel max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4">
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm">TENANT REGISTRATION</h3>
         <button onclick="closeTenantRegistrationModal()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
 
-      <div class="flex flex-col gap-3">
+      <div class="modal-body flex flex-col gap-3">
         <div class="flex flex-col gap-1">
           <label class="text-[9px] text-cyan-600 tracking-widest">TENANT NAME</label>
           <input id="tenant-name" type="text" placeholder="Acme Labs"
@@ -352,13 +355,14 @@
 
   <div id="settings-modal"
     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
+    <div class="hud-panel modal-panel max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4">
 
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">SYSTEM PREFERENCES</h3>
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm">SYSTEM PREFERENCES</h3>
         <button onclick="toggleSettingsModal()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
 
+      <div class="modal-body">
       <div class="flex flex-col gap-3 mb-6">
 
         <div class="flex justify-between items-center bg-cyan-950/20 p-3 border border-cyan-900/40">
@@ -437,24 +441,42 @@
 
       </div>
 
+      <div class="flex flex-col gap-2 bg-cyan-950/20 p-3 border border-cyan-900/40 mb-6">
+        <span class="text-[10px] text-cyan-300 tracking-widest">CHANGE PASSWORD</span>
+        <input id="pw-current" type="password" autocomplete="current-password" placeholder="Current password"
+          class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none" />
+        <input id="pw-new" type="password" autocomplete="new-password" placeholder="New password (min 8 characters)"
+          class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none" />
+        <input id="pw-confirm" type="password" autocomplete="new-password" placeholder="Confirm new password"
+          onkeydown="if (event.key === 'Enter') submitPasswordChange()"
+          class="bg-black border border-cyan-800 text-cyan-300 text-[10px] tracking-widest p-2 outline-none" />
+        <div id="pw-message" class="hidden text-[9px] font-bold tracking-widest"></div>
+        <div class="flex justify-end">
+          <button onclick="submitPasswordChange()"
+            class="btn-ui btn-ui-emerald px-4 py-1.5 text-[9px] font-bold tracking-widest">UPDATE PASSWORD</button>
+        </div>
+      </div>
+
       <div class="flex justify-end">
         <button onclick="toggleSettingsModal()"
           class="btn-ui btn-ui-cyan px-6 py-2 text-[10px] font-bold tracking-widest">SAVE
           & CLOSE</button>
       </div>
 
+      </div>
     </div>
   </div>
 
   <div id="projects-modal"
     class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-2xl w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[90vh] overflow-y-auto">
+    <div class="hud-panel modal-panel max-w-2xl w-full border-cyan-900/80 bg-[#020617] mx-4">
 
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">PROJECT REGISTRY</h3>
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm">PROJECT REGISTRY</h3>
         <button onclick="toggleProjectsModal()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
 
+      <div class="modal-body">
       <div class="bg-cyan-950/20 p-3 border border-cyan-900/40 mb-4 flex flex-col gap-2">
         <div class="flex items-center justify-between">
           <span class="text-[10px] text-cyan-300 tracking-widest font-bold">CORE PROJECT PATH</span>
@@ -639,20 +661,21 @@
         </div>
       </div>
 
+      </div>
     </div>
   </div>
 
   <div id="project-file-editor-modal"
     class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-5xl w-full border-cyan-900/80 bg-[#020617] mx-4 max-h-[92vh] overflow-y-auto">
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.2em] text-sm mt-1">PROJECT FILE EDITOR: <span
+    <div class="hud-panel modal-panel modal-panel-fill max-w-5xl w-full border-cyan-900/80 bg-[#020617] mx-4">
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.2em] text-sm">PROJECT FILE EDITOR: <span
             id="project-file-editor-project" class="text-cyan-300"></span></h3>
         <button onclick="closeProjectFileEditor()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div class="md:col-span-1 flex flex-col gap-2">
+      <div class="modal-body grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="md:col-span-1 flex flex-col gap-2 min-h-0">
           <div class="flex items-center gap-2">
             <button id="project-file-editor-up-btn" onclick="navigateProjectFileEditorUp()"
               class="btn-ui btn-ui-cyan px-3 py-1.5 text-[9px] font-bold tracking-widest" disabled>[UP]</button>
@@ -669,21 +692,27 @@
           </div>
           <input id="project-file-upload-input" type="file" multiple class="hidden"
             onchange="uploadProjectFiles(this.files)" />
-          <button type="button" onclick="selectProjectFilesToUpload()"
-            class="btn-ui btn-ui-cyan w-full px-2 py-1.5 text-[9px] font-bold">UPLOAD FILES TO THIS FOLDER</button>
+          <input id="project-folder-upload-input" type="file" webkitdirectory directory multiple class="hidden"
+            onchange="uploadProjectFiles(this.files)" />
+          <div class="flex gap-2">
+            <button type="button" onclick="selectProjectFilesToUpload()"
+              class="btn-ui btn-ui-cyan flex-1 px-2 py-1.5 text-[9px] font-bold">UPLOAD FILES TO THIS FOLDER</button>
+            <button type="button" onclick="selectProjectFolderToUpload()"
+              class="btn-ui btn-ui-cyan flex-1 px-2 py-1.5 text-[9px] font-bold">UPLOAD FOLDER</button>
+          </div>
           <div id="project-file-editor-list"
-            class="flex flex-col gap-1 max-h-[58vh] overflow-y-auto border border-cyan-900/40 bg-black p-2">
+            class="flex flex-col gap-1 flex-1 min-h-0 max-h-[58vh] md:max-h-none overflow-y-auto border border-cyan-900/40 bg-black p-2">
             <div class="text-cyan-800 italic text-center text-[10px] py-4">Select a project to browse files.</div>
           </div>
         </div>
 
-        <div class="md:col-span-2 flex flex-col gap-2">
+        <div class="md:col-span-2 flex flex-col gap-2 min-h-0">
           <div id="project-file-editor-current-file"
             class="bg-black border border-cyan-800 text-cyan-300 text-[9px] tracking-widest p-2 font-mono truncate">NO
             FILE
             SELECTED</div>
           <textarea id="project-file-editor-content"
-            class="w-full min-h-[52vh] bg-black border border-cyan-800 text-cyan-200 text-[11px] tracking-wide p-3 outline-none font-mono"
+            class="w-full flex-1 min-h-[40vh] md:min-h-0 resize-none bg-black border border-cyan-800 text-cyan-200 text-[11px] tracking-wide p-3 outline-none font-mono"
             spellcheck="false" placeholder="Select a file from the left panel..."></textarea>
           <div id="project-file-editor-error" class="hidden text-[9px] text-red-400 font-bold tracking-widest"></div>
           <div class="flex justify-end gap-3 pt-2 border-t border-cyan-900/40">
@@ -699,13 +728,14 @@
 
   <div id="folder-modal"
     class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-    <div class="hud-panel p-6 max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4">
+    <div class="hud-panel modal-panel max-w-lg w-full border-cyan-900/80 bg-[#020617] mx-4">
 
-      <div class="flex items-center justify-between mb-4 border-b border-cyan-900/50 pb-3">
-        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm mt-1">FOLDER NAVIGATOR</h3>
+      <div class="modal-header">
+        <h3 class="text-cyan-400 font-bold tracking-[0.3em] text-sm">FOLDER NAVIGATOR</h3>
         <button onclick="closeFolderNavigator()" class="btn-ui btn-ui-cyan font-bold px-2 py-0.5">[X]</button>
       </div>
 
+      <div class="modal-body">
       <div class="flex items-center gap-2 mb-3">
         <button id="folder-up-btn" onclick="navigateFolderUp()"
           class="btn-ui btn-ui-cyan px-3 py-1.5 text-[9px] font-bold tracking-widest">[UP]</button>
@@ -729,6 +759,7 @@
           THIS FOLDER</button>
       </div>
 
+      </div>
     </div>
   </div>
 
@@ -773,7 +804,7 @@
         CONTINUE?</p>
 
       <label for="remove-delete-logs" class="flex items-center gap-2 text-[11px] text-cyan-100/80 mb-5 cursor-pointer">
-        <input id="remove-delete-logs" type="checkbox" class="accent-red-500">
+        <input id="remove-delete-logs" type="checkbox" checked class="accent-red-500">
         Delete this service's stored PM2 log files
       </label>
 
@@ -844,8 +875,16 @@
         This will stop the running application, terminate the live telemetry pipeline, and disconnect all active
         services from this console. This dashboard will go offline until the application is started again.
       </p>
-      <p class="text-red-400 text-[10px] font-bold mb-6 tracking-widest animate-pulse">ARE YOU SURE YOU WANT TO
+      <p class="text-red-400 text-[10px] font-bold mb-4 tracking-widest animate-pulse">ARE YOU SURE YOU WANT TO
         CONTINUE?</p>
+
+      <div class="flex flex-col gap-1 mb-4">
+        <label for="shutdown-password" class="text-[9px] text-cyan-600 tracking-widest">ENTER ADMIN PASSWORD TO CONFIRM</label>
+        <input id="shutdown-password" type="password" autocomplete="current-password"
+          onkeydown="if (event.key === 'Enter') confirmShutdown()"
+          class="bg-black border border-red-900 text-cyan-300 text-[10px] tracking-widest p-2 outline-none" />
+        <div id="shutdown-error" class="hidden text-[9px] text-red-400 font-bold tracking-widest"></div>
+      </div>
 
       <div class="flex justify-end gap-3">
         <button onclick="closeShutdownModal()"

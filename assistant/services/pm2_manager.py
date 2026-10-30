@@ -26,6 +26,17 @@ def parse_start_instances(command):
     return ' '.join(parts[:-2]), int(parts[-1])
 
 
+_KEEP_LOGS_PATTERN = re.compile(r'(?:\s+(?:and|but))?\s+(?:--keep-logs|keep\s+(?:the\s+)?logs?)\b', re.IGNORECASE)
+
+
+def parse_keep_logs(command):
+    """Strip an explicit 'keep logs' / '--keep-logs' request; deletes remove logs unless it is present."""
+    text = str(command or '').strip()
+    if not _KEEP_LOGS_PATTERN.search(text):
+        return text, False
+    return ' '.join(_KEEP_LOGS_PATTERN.sub('', text).split()), True
+
+
 def parse_delete_logs(command):
     parts = str(command or '').strip().split()
     if '--delete-logs' not in parts:
