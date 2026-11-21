@@ -222,8 +222,17 @@
         class="hud-panel p-3 flex-1 min-h-0 flex flex-col gap-2 glow-border transition-all duration-300">
         <div class="flex justify-between items-end border-b border-cyan-900/50 pb-1 shrink-0">
           <h2 class="text-xs font-bold tracking-[0.2em] text-cyan-500">CORE INFRASTRUCTURE</h2>
+          <div class="flex items-center gap-2">
+            <label for="core-services-view" class="text-[9px] text-cyan-700 uppercase tracking-widest">VIEW</label>
+            <select id="core-services-view" onchange="setCoreServicesView(this.value)"
+              class="bg-black border border-cyan-900/60 text-cyan-300 text-[9px] uppercase tracking-widest px-2 py-1 focus:border-cyan-500 focus:outline-none">
+              <option value="block">Block View</option>
+              <option value="table">Table View</option>
+            </select>
+          </div>
         </div>
-        <div id="core-services-container" class="flex-1 overflow-y-auto flex flex-col gap-2 pr-1"></div>
+        <div id="core-services-container" class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1"></div>
+        <div id="core-services-table-view" class="hidden flex-1 min-h-0 overflow-auto"></div>
       </div>
 
       <div id="console-panel"

@@ -26,6 +26,21 @@ window.applyTheme = function (themeName) {
   }
 };
 
+window.setCoreServicesView = function (view) {
+  if (view !== 'block' && view !== 'table') return;
+  const blockView = document.getElementById('core-services-container');
+  const tableView = document.getElementById('core-services-table-view');
+  const switcher = document.getElementById('core-services-view');
+  if (!blockView || !tableView) return;
+
+  window.AppState.coreServicesView = view;
+  blockView.classList.toggle('hidden', view !== 'block');
+  tableView.classList.toggle('hidden', view !== 'table');
+  if (switcher) switcher.value = view;
+};
+
+window.setCoreServicesView('block');
+
 window.toggleTheme = function () {
   const current = (window.AppState && window.AppState.settings && window.AppState.settings.theme) || 'dark';
   const nextTheme = current === 'dark' ? 'light' : 'dark';
@@ -152,6 +167,163 @@ function syncCoreCardsInPlace(coreContainer, services) {
   return true;
 }
 
+function renderCoreServicesTable(container, services) {
+  const openMenuName = container.querySelector('details[data-more-menu][open]')?.getAttribute('data-service-name');
+  const coreServices = services.filter(service => !service.name.startsWith('amr-service-'));
+  const table = document.createElement('table');
+  table.setAttribute('aria-label', 'Core PM2 services');
+  table.className = 'w-full min-w-[740px] text-left text-[9px] uppercase tracking-wide';
+
+  const headers = ['SERVICE', 'PORT', 'STATUS', 'CPU', 'MEMORY', 'INSTANCES', 'UPTIME', 'ACTIONS'];
+  const thead = document.createElement('thead');
+  thead.className = 'sticky top-0 z-10 bg-slate-950 text-cyan-600';
+  const headerRow = document.createElement('tr');
+  headers.forEach(label => {
+    const th = document.createElement('th');
+    th.className = 'border-b border-cyan-900/60 px-2 py-2 font-bold whitespace-nowrap';
+    th.textContent = label;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  const canMutateServices = window.userMayMutateServices();
+  const cellClass = 'border-b border-cyan-900/30 px-2 py-2 align-middle whitespace-nowrap';
+
+  const makeButton = (label, className, action, isOperation) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.className = className;
+    if (isOperation) button.setAttribute('data-svc-action', '');
+    button.addEventListener('click', action);
+    return button;
+  };
+
+  const makeMenuItem = (details, label, className, action, isOperation) => {
+    const button = makeButton(label, `btn-ui ${className} text-left text-[9px] py-1 px-2`, () => {
+      details.removeAttribute('open');
+      action();
+    }, isOperation);
+    return button;
+  };
+
+  coreServices.forEach(service => {
+    const isRemoved = service.status === 'removed';
+    const isOnline = service.status === 'online';
+    const row = document.createElement('tr');
+    row.setAttribute('data-core-row', '1');
+    row.setAttribute('data-service-name', service.name);
+    row.className = isRemoved ? 'bg-red-950/20 hover:bg-red-900/30' : 'hover:bg-cyan-950/20';
+
+    const nameCell = document.createElement('td');
+    nameCell.className = `${cellClass} font-bold text-cyan-300`;
+    nameCell.textContent = service.name;
+    if (service.path) {
+      const path = document.createElement('div');
+      path.className = 'mt-1 max-w-[240px] truncate normal-case font-mono text-cyan-700';
+      path.textContent = service.path;
+      path.title = service.path;
+      nameCell.appendChild(path);
+    }
+
+    const statusCell = document.createElement('td');
+    statusCell.className = `${cellClass} ${isOnline ? 'text-emerald-300' : isRemoved ? 'text-red-500' : 'text-amber-300'}`;
+    statusCell.textContent = isRemoved ? 'REMOVED' : service.status;
+
+    const values = [
+      nameCell,
+      service.port == null ? '-' : service.port,
+      statusCell,
+      service.cpu == null ? '-' : `${service.cpu}%`,
+      service.memory || '-',
+      service.online_instances != null && service.instances != null
+        ? `${service.online_instances} / ${service.instances} ONLINE`
+        : service.instances == null ? '-' : service.instances,
+      service.uptime || '-',
+    ];
+
+    values.forEach((value, index) => {
+      const cell = index === 0 || index === 2 ? value : document.createElement('td');
+      if (index !== 0 && index !== 2) {
+        cell.className = `${cellClass} text-cyan-400`;
+        cell.textContent = String(value);
+      }
+      row.appendChild(cell);
+    });
+
+    const actionsCell = document.createElement('td');
+    actionsCell.className = `${cellClass} `;
+    const actions = document.createElement('div');
+    actions.className = 'flex items-center';
+    const details = document.createElement('details');
+    details.className = 'group relative';
+    details.setAttribute('data-more-menu', '');
+    details.setAttribute('data-service-name', service.name);
+    const summary = document.createElement('summary');
+    summary.className = 'btn-ui btn-ui-zinc list-none select-none px-2 py-1';
+    summary.textContent = '...';
+    summary.setAttribute('aria-label', 'Service actions');
+    details.appendChild(summary);
+    const menu = document.createElement('div');
+    menu.className = 'absolute right-0 mt-1 min-w-[144px] z-20 bg-black border border-cyan-900/60 shadow-[0_8px_24px_rgba(0,0,0,0.45)] p-1 flex flex-col gap-1';
+    if (isRemoved) {
+      menu.appendChild(makeMenuItem(details, 'RESTORE SERVICE', 'btn-ui-emerald', () => window.serviceAction('start', service.name), true));
+      menu.appendChild(makeMenuItem(details, 'CLEAR LOGS', 'btn-ui-zinc', () => window.serviceAction('flush', service.name)));
+    } else {
+      if (canMutateServices && isOnline) {
+        menu.appendChild(makeMenuItem(details, 'STOP', 'btn-ui-amber', () => window.promptStopService(service.name), true));
+      }
+      if (canMutateServices) {
+        menu.appendChild(makeMenuItem(details, 'RESTART', 'btn-ui-cyan', () => window.serviceAction('restart', service.name), true));
+      }
+      const isLogging = window.AppState.activeLogService === service.name;
+      menu.appendChild(makeMenuItem(details, isLogging ? 'STOP LOGS' : 'LOGS', 'btn-ui-zinc', () => window.serviceAction('log', service.name)));
+      if (canMutateServices) {
+        menu.appendChild(makeMenuItem(details, 'CLEAR LOGS', 'btn-ui-zinc', () => window.serviceAction('flush', service.name)));
+        menu.appendChild(makeMenuItem(details, 'REMOVE', 'btn-ui-red', () => window.promptRemoveService(service.name)));
+      } else {
+        menu.appendChild(makeMenuItem(details, 'VIEW LOGS', 'btn-ui-zinc', () => window.serviceAction('flush', service.name)));
+      }
+      menu.appendChild(makeMenuItem(details, 'DOWNLOAD LOGS', 'btn-ui-cyan', () => window.openLogFiles(service.name)));
+    }
+    details.appendChild(menu);
+    actions.appendChild(details);
+    actionsCell.appendChild(actions);
+    row.appendChild(actionsCell);
+    tbody.appendChild(row);
+  });
+
+  if (!coreServices.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.colSpan = headers.length;
+    cell.className = 'border border-dashed border-cyan-900/40 p-5 text-center text-cyan-600';
+    cell.textContent = 'No Core Services Available ';
+    cell.appendChild(makeButton('START CORE SERVICES', 'btn-ui btn-ui-cyan ml-2 px-3 py-1 font-bold', () => window.restoreCoreServices()));
+    row.appendChild(cell);
+    tbody.appendChild(row);
+  }
+
+  table.appendChild(tbody);
+  container.replaceChildren(table);
+  if (openMenuName) {
+    const openMenu = Array.from(container.querySelectorAll('details[data-more-menu]'))
+      .find(menu => menu.getAttribute('data-service-name') === openMenuName);
+    openMenu?.setAttribute('open', 'open');
+  }
+}
+
+document.addEventListener('click', event => {
+  const clickedElement = event.target instanceof Element ? event.target : null;
+  if (!clickedElement) return;
+
+  document.querySelectorAll('details[data-more-menu][open]').forEach(menu => {
+    if (!menu.contains(clickedElement)) menu.removeAttribute('open');
+  });
+});
+
 // Connect to the local server
 const socketPath = (window.APP_CONFIG && window.APP_CONFIG.SOCKET_PATH) || '/qcc.io';
 const assistantLogLabel = (window.APP_CONFIG && window.APP_CONFIG.ASSISTANT_LOG_LABEL) || 'QUASON';
@@ -225,8 +397,9 @@ socket.on('pm2_telemetry', (data) => {
   const services = data.services || [];
   const host = data.host;
   const coreContainer = document.getElementById('core-services-container');
+  const coreTableView = document.getElementById('core-services-table-view');
   const amrContainer = document.getElementById('amr-services-container');
-  if (!coreContainer || !amrContainer) return;
+  if (!coreContainer || !coreTableView || !amrContainer) return;
 
   // Clear AMR container immediately
   amrContainer.innerHTML = '';
@@ -384,6 +557,8 @@ socket.on('pm2_telemetry', (data) => {
 
     window.AppState.coreStructureSignature = coreStructureSignature;
   }
+
+  renderCoreServicesTable(coreTableView, services);
 
   const amrHeader = document.getElementById('amr-count-header');
   if (amrHeader) amrHeader.textContent = `(${amrTotal})`;

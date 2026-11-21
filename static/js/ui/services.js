@@ -20,14 +20,15 @@ window.noteOpResult = function (serviceName, result) {
   }
 };
 
-// Reflects pending operations on the service cards: disables buttons and shows a status line.
+// Reflects pending operations: disables actions and shows a status line on service cards.
 window.applyPendingOps = function () {
-  document.querySelectorAll('[data-core-card="1"]').forEach(card => {
+  document.querySelectorAll('[data-core-card="1"], [data-core-row="1"]').forEach(card => {
     const name = card.getAttribute('data-service-name');
     const op = window.getPendingOp(name);
     let line = card.querySelector('[data-role="op-status"]');
     card.querySelectorAll('[data-svc-action]').forEach(btn => { btn.disabled = !!op; btn.classList.toggle('opacity-50', !!op); btn.classList.toggle('cursor-not-allowed', !!op); });
     if (!op) { line?.remove(); return; }
+    if (card.hasAttribute('data-core-row')) return;
     if (!line) {
       line = document.createElement('div');
       line.setAttribute('data-role', 'op-status');
